@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 # settings
 ##################################################
 seed_all = 2
-norm = "s_prot"                                  # s_prot or s_gluon
+norm = "s_prot"                                  # s_prot or s_int
 maxfunc = "mqr"                                  # mqr or mmr
 output = "w"                                     # w or logw
 
@@ -38,7 +38,7 @@ def energy_cm(X):
 if (norm=="s_prot"):
     norm_const = 13000                           # normalization costant equal to s of proton
     X_train, X_val = X_train/norm_const, X_val/norm_const
-if (norm=="s_gluon"):
+if (norm=="s_int"):
     for i in range(len(X_train)):                # normalize each moment using s^
         s_train = energy_cm(X_train[i])
         X_train[i] /= s_train
