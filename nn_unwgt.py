@@ -1,14 +1,15 @@
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import time 
 
 
 ##################################################
 # settings
 ##################################################
 seed_all = 2
-norm = "s_pro"                                   # s_pro, s_int or cmass
-output = "wgt"                                   # wgt or lnw
+norm = "cmass"                                   # s_pro, s_int or cmass
+output = "lnw"                                   # wgt or lnw
 lossfunc = "mse"                                 # mse or chi
 maxfunc = "mqr"                                  # mqr or mmr
 unwgt = "new"                                    # new or pap
@@ -53,52 +54,38 @@ with open('/home/lb_linux/nn_unwgt/info_wgt_events_5iter.txt', 'r') as infof:
 
 # input normalization
 def energy_cm(X):
-    res = np.sqrt((X[3]+X[5])**2 - X[0]**2 - X[1]**2 - (X[2]+X[4])**2)
+    res = np.sqrt((X[:, 3]+X[:, 5])**2 - (X[:, 2]+X[:, 4])**2)
     return res
 
 def beta(X):                                     # beta of top-antitop in the lab frame
-    res = np.abs(X[2]+X[4]) / (X[3]+X[5])
+    res = np.abs(X[:, 2]+X[:, 4]) / (X[:, 3]+X[:, 5])
     return res
 
 def rapidity(X):                                 # rapidity of top in the lab frame
-    res = 0.5 * np.log((X[3]+X[2]) / (X[3]-X[2]))
+    res = 0.5 * np.log((X[:, 3]+X[:, 2]) / (X[:, 3]-X[:, 2]))
     return res
 
-X_train, X_val = np.empty(0), np.empty(0)
+#X_train, X_val = np.empty(0), np.empty(0)
 if (norm=="s_pro"):
-    X_train, X_val = data[:-4000, :-1], data[-4000:, :-1]
-    X_train, X_val = X_train/E_cm_pro, X_val/E_cm_pro
+    X_data = data[:, :-1] / E_cm_pro 
+    X_train, X_val = X_data[:-4000, :], X_data[-4000:, :]
 if (norm=="s_int"):
-    X_train, X_val = data[:-4000, :-1], data[-4000:, :-1]
-    for i in range(len(X_train)):                # normalize each moment using s^
-        s_train = energy_cm(X_train[i])
-        X_train[i] /= s_train
-        if (i < len(X_val)):
-            s_val = energy_cm(X_val[i])
-            X_val[i] /= s_val
+    E_cm_int = energy_cm(data[:, :-1])
+    X_data = data[:, :-1] / E_cm_int 
+    X_train, X_val = X_data[:-4000, :], X_data[-4000:, :]
 if (norm=="cmass"):
-    X_train = np.empty((len(data)-4000, 5))
-    X_val = np.empty((4000, 5))
-    for i in range(len(data)-4000):
-        E_cm_int = energy_cm(data[i, :-1])
-        beta_int = beta(data[i, :-1])
-        X_train[i, 0] = E_cm_int / E_cm_pro 
-        X_train[i, 1] = rapidity(data[i, :-1])
-        X_train[i, 2] = data[i, 0] / E_cm_int
-        X_train[i, 3] = data[i, 1] / E_cm_int
-        X_train[i, 4] = (-(beta_int/np.sqrt(1-beta_int**2))*data[i, 3] + (1/np.sqrt(1-beta_int**2))*data[i, 2]) / E_cm_int
-        if (i<4000):
-            E_cm_int = energy_cm(data[i-4000, :-1])
-            beta_int = beta(data[i-4000, :-1])
-            X_val[i, 0] = E_cm_int / E_cm_pro 
-            X_val[i, 1] = rapidity(data[i-4000, :-1])
-            X_val[i, 2] = data[i-4000, 0] / E_cm_int
-            X_val[i, 3] = data[i-4000, 1] / E_cm_int
-            X_val[i, 4] = (-(beta_int/np.sqrt(1-beta_int**2))*data[i-4000, 3] + (1/np.sqrt(1-beta_int**2))*data[i-4000, 2]) / E_cm_int 
+    E_cm_int = energy_cm(data[:, :-1])
+    beta_int = beta(data[:, :-1])
+    X_data = np.empty(shape=data[:, :-2].shape)
+    X_data[:, 0] = E_cm_int / E_cm_pro 
+    X_data[:, 1] = rapidity(data[:, :-1])
+    X_data[:, 2] = data[:, 0] / E_cm_int
+    X_data[:, 3] = data[:, 1] / E_cm_int 
+    X_data[:, 4] = (-(beta_int/np.sqrt(1-beta_int**2))*data[:, 3] + (1/np.sqrt(1-beta_int**2))*data[:, 2]) / E_cm_int
+    X_train, X_val = X_data[:-4000, :], X_data[-4000:, :]
 
 
 # output inizialization
-wgt_train, wgt_val = np.empty(0), np.empty(0),
 wgt_train, wgt_val = data[:-4000, -1], data[-4000:, -1]
 
 
@@ -131,37 +118,14 @@ if (output=="wgt"):
     history = model.fit(X_train, wgt_train, validation_data=(X_val, wgt_val), batch_size=1000, epochs=100, callbacks=[callback])         # predict w
 if (output=="lnw"):
     history = model.fit(X_train, np.abs(np.log(wgt_train)), validation_data=(X_val, np.abs(np.log(wgt_val))), batch_size=1000, epochs=100, callbacks=[callback])         # predict the abs(log(w))
-plt.plot(history.history['loss'])
-plt.plot(history.history['val_loss'])
+plt.plot(history.history['loss'], label="Training")
+plt.plot(history.history['val_loss'], label="Validation")
 plt.title('model loss')
+plt.yscale('log')
 plt.ylabel('loss')
 plt.xlabel('epoch')
-plt.legend(['Train', 'Validation'], loc='best')
+plt.legend(loc='best')
 plt.savefig("/home/lb_linux/nn_unwgt/plot_16_16_{}_{}_{}_{}_seed{}_train.pdf".format(norm, lossfunc, output, unwgt, seed_all), format='pdf')
-
-
-
-##################################################
-# preparation of plots
-##################################################
-
-fig_eff, axs_eff = plt.subplots(3, figsize=(8, 10))  
-if(unwgt=="new"):
-    axs_eff[0].set(xlabel="s_max", ylabel="eff_1")
-if(unwgt=="pap"):
-    axs_eff[0].set(xlabel="w_max", ylabel="eff_1")
-axs_eff[1].set(xlabel="x_max", ylabel="eff_2")
-#axs_eff[2].set(xlabel="s_max", ylabel="x_max")
-plot_legend = """Layers: 6, 16, 16, 1 \nEpochs: 100 \nBatch size: 1000 \nEv_train: 12000 \nEv_val: 4000
-Normalization: {} \nLoss: {} \nOutput: {} \nMax func: {} \nUnwgt: {} \nSeed tf and np: {}""".format(norm, lossfunc, output, maxfunc, unwgt, seed_all)
-fig_eff.legend(title = plot_legend)
-
-fig_ws, axs_ws = plt.subplots(3, figsize=(8, 9))
-axs_ws[0].set(xlabel="w/s", ylabel="dN/d(w/s)")
-axs_ws[1].set(xlabel="w/s", ylabel="dN/d(w/s)")
-axs_eff[2].set_title(label="f_eff")
-axs_ws[2].set(xlabel="w", ylabel="w/s")
-fig_ws.legend(title = plot_legend)
 
 
 
@@ -226,7 +190,8 @@ def max_median_reduction(arr):
 
 if (maxfunc=="mqr"): 
     my_max = max_quantile_reduction
-    arr_r = [0.1, 0.01, 0.001, 0.0001, 0, -1, -9] 
+    #arr_r = [0.1, 0.01, 0.001, 0.0001, 0, -1, -9] 
+    arr_r = [0.7, 0.5, 0.3, 0.1] 
 
 if (maxfunc=="mmr"):
     my_max = max_median_reduction
@@ -237,13 +202,40 @@ if (unwgt=="new"):
 if (unwgt=="pap"):
     arr_wmax = np.empty(len(arr_r))
 arr_eff1 = np.empty(len(arr_r))
-mtx_xmax, mtx_eff2, mtx_feff = np.empty((len(arr_r), len(arr_r))), np.empty((len(arr_r), len(arr_r))), np.empty((len(arr_r), len(arr_r)))
 
+
+
+##################################################
+# preparation of plots
+##################################################
+
+fig_eff, axs_eff = plt.subplots(3, figsize=(8, 10))  
+if(unwgt=="new"):
+    axs_eff[0].set(xlabel="s_max", ylabel="eff_1")
+if(unwgt=="pap"):
+    axs_eff[0].set(xlabel="w_max", ylabel="eff_1")
+axs_eff[1].set(xlabel="x_max", ylabel="eff_2")
+#axs_eff[2].set(xlabel="s_max", ylabel="x_max")
+plot_legend = """Layers: 6, 16, 16, 1 \nEpochs: 100 \nBatch size: 1000 \nEv_train: 12000 \nEv_val: 4000
+Normalization: {} \nLoss: {} \nOutput: {} \nMax func: {} \nUnwgt: {} \nSeed tf and np: {}""".format(norm, lossfunc, output, maxfunc, unwgt, seed_all)
+fig_eff.legend(title = plot_legend)
+
+fig_ws, axs_ws = plt.subplots(3, figsize=(8, 9))
+axs_ws[0].set(xlabel="w/s", ylabel="dN/d(w/s)")
+axs_ws[1].set(xlabel="w/s", ylabel="dN/d(w/s)")
+axs_eff[2].set_title(label="f_eff")
+axs_ws[2].set(xlabel="w", ylabel="w/s")
+fig_ws.legend(title = plot_legend)
+
+fig_zk, axs_zk = plt.subplots(len(arr_r)*len(arr_r), figsize=(6, 24))
+fig_zk.legend(title = plot_legend)
 
 
 ##################################################
 # unweighting
 ##################################################
+
+mtx_xmax, mtx_eff2, mtx_kish, mtx_feff = np.empty((len(arr_r), len(arr_r))), np.empty((len(arr_r), len(arr_r))), np.empty((len(arr_r), len(arr_r))), np.empty((len(arr_r), len(arr_r)))
 
 for i_r1 in range(len(arr_r)):                   # loop to test different maxima conditions
 
@@ -292,6 +284,7 @@ for i_r1 in range(len(arr_r)):                   # loop to test different maxima
 
         s3 = np.empty(0)                         # predicted wgt kept by second unwgt
         z3 = np.empty(0)                         # predicted wgt after second unwgt
+        ztot = np.empty(0)
         x3 = np.empty(0)
         if (unwgt=="new"):
             if (maxfunc=="mqr"):
@@ -307,6 +300,12 @@ for i_r1 in range(len(arr_r)):                   # loop to test different maxima
             mtx_eff2[i_r1, i_r2] = efficiency(z3, x2, x_max)
             mtx_feff[i_r1, i_r2] = effective_gain(z3, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
 
+            mtx_kish[i_r1, i_r2] = f_kish(z3)
+            axs_zk[i_r1*len(arr_r)+i_r2].hist(z3, bins=np.linspace(0.995, max(z3)+0.05, 15), label="r1: {} \nr2:{} \nf_kish: {:.5f}".format(arr_r[i_r1], arr_r[i_r2], mtx_kish[i_r1, i_r2]))
+            axs_zk[i_r1*len(arr_r)+i_r2].set_yscale('log')
+            axs_zk[i_r1*len(arr_r)+i_r2].legend(loc='best')
+            axs_zk[i_r1*len(arr_r)+i_r2].set(xlabel="z3", ylabel="dN/dz3")
+
         if (unwgt=="pap"):
             if (maxfunc=="mqr"):
                 x_max = my_max(s2, x2)
@@ -317,9 +316,10 @@ for i_r1 in range(len(arr_r)):                   # loop to test different maxima
                     s3 = np.append(s3, s2[i])
                     wgt_z = np.maximum(1, x2[i]/x_max)
                     z3 = np.append(z3, wgt_z)
+                    ztot = np.append(ztot, z2[i]*wgt_z)
                     x3 = np.append(x3, x2[i])
             mtx_eff2[i_r1, i_r2] = efficiency(z3, x2, x_max) 
-            mtx_feff[i_r1, i_r2] = effective_gain(z2*z3, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
+            mtx_feff[i_r1, i_r2] = effective_gain(ztot, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
         mtx_xmax[i_r1, i_r2] = x_max
         #axs_eff[1].annotate(arr_r[i_r2], (x_max, mtx_eff2[i_r1, i_r2]))
 
@@ -379,8 +379,10 @@ wbins = np.linspace(min(wgt_val), max(wgt_val), 50)
 xbins = np.linspace(0, 2, 20)
 h2 = axs_ws[2].hist2d(wgt_val, x1, bins=[wbins, xbins])
 plt.colorbar(h2[3], ax= axs_ws[2]) 
+
 fig_eff.savefig("/home/lb_linux/nn_unwgt/plot_16_16_{}_{}_{}_{}_{}_seed{}_eff.pdf".format(norm, lossfunc, output, maxfunc, unwgt, seed_all), format='pdf')
 fig_ws.savefig("/home/lb_linux/nn_unwgt/plot_16_16_{}_{}_{}_{}_{}_seed{}_ws.pdf".format(norm, lossfunc, output, maxfunc, unwgt, seed_all), format='pdf')
+fig_zk.savefig("/home/lb_linux/nn_unwgt/plot_16_16_{}_{}_{}_{}_{}_seed{}_zk.pdf".format(norm, lossfunc, output, maxfunc, unwgt, seed_all), format='pdf')
 
 
 
