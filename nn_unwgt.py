@@ -11,7 +11,7 @@ norm_sc = MinMaxScaler()
 stan_sc = StandardScaler()
 
 
-dataset = "8t10to6"            # 7iter, 8t10to6
+dataset = "7iter"            # 7iter, 8t10to6
 load_module = False
 cluster = False
 
@@ -58,7 +58,7 @@ time_read = time.time() - time_0
 # settings
 ##################################################
 
-tests = [213321, 213311]
+tests = [111111]
 
 for test in tests:
     # test = ABCDEFG
@@ -85,12 +85,6 @@ for test in tests:
         input = "ptetf" 
     if ((test%10**4)//1000==3):
         input = "p3pap" 
-    #if ((test%100)//10==3):
-    #    input = "ppctf" 
-    #if ((test%100)//10==4):
-    #    input = "yptno" 
-    #if ((test%100)//10==5):
-    #    input = "cmsca" 
     # D (output of the nn and its normalization)
     if ((test%1000)//100==1):
         output = "wno" 
@@ -123,7 +117,7 @@ for test in tests:
 
     seed_all = 2 
 
-    n_epochs = 500 
+    n_epochs = 5 
     learn_rate = 0.001
     ratio_train_val = 3                              # number of training events over number of validation events
 
@@ -433,7 +427,7 @@ for test in tests:
                 tf.keras.layers.Dense(1)
             ])
 
-
+    tf.keras.backend.set_floatx("float64")
 
 
     # loss function and compile the model 
@@ -477,13 +471,13 @@ for test in tests:
 
 
     if (load_module==False):
-        fig, axs = plt.subplots(figsize=(8.27, 6))
-        axs.plot(history.history['loss'], label="Training")
-        axs.plot(history.history['val_loss'], label="Validation")
-        axs.set_yscale('log')
-        axs.set(xlabel="epochs", ylabel="loss")
-        axs.legend(loc=0)
-        fig.savefig("{}/train_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
+        fig_tr, axs_tr = plt.subplots(figsize=(8.27, 6))
+        axs_tr.plot(history.history['loss'], label="Training")
+        axs_tr.plot(history.history['val_loss'], label="Validation")
+        axs_tr.set_yscale('log')
+        axs_tr.set(xlabel="epochs", ylabel="loss")
+        axs_tr.legend(loc=0)
+        fig_tr.savefig("{}/train_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
 
 
 
@@ -656,32 +650,42 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
 
         # first unweighting
         rand1 = np.random.rand(len(s1))              # random numbers for the first unwgt
-        w2 = np.empty(0)                             # real wgt evaluated after first unwgt
-        s2 = np.empty(0)                             # predicted wgt kept by first unwgt
-        z2 = np.empty(0)                             # predicted wgt after first unwgt
-        x2 = np.empty(0)                             # ratio between real and predicted wgt of kept events
+        w2 = np.empty(len(s1))                             # real wgt evaluated after first unwgt
+        s2 = np.empty(len(s1))                             # predicted wgt kept by first unwgt
+        z2 = np.empty(len(s1))                             # predicted wgt after first unwgt
+        x2 = np.empty(len(s1))                             # ratio between real and predicted wgt of kept events
 
         if (unwgt=="new"):                           # new method for the unweighting
             s_max = my_max(s1)
             arr_smax[i_r1] = s_max
+            j = 0
             for i in range(len(s1)):                 # first unweighting, based on the predicted wgt
                 if (np.abs(s1[i])/s_max > rand1[i]):
-                    s2 = np.append(s2, s1[i])
-                    wgt_z = np.sign(s1[i])*np.maximum(1, np.abs(s1[i])/s_max)      # kept event's wgt after first unwgt
-                    z2 = np.append(z2, wgt_z) 
-                    w2 = np.append(w2, wgt_val[i]) 
-                    x2 = np.append(x2, wgt_val[i]/np.abs(s1[i]))
+                    s2[j] = s1[i]
+                    z2[j] = np.sign(s1[i])*np.maximum(1, np.abs(s1[i])/s_max)      # kept event's wgt after first unwgt 
+                    w2[j] = wgt_val[i] 
+                    x2[j] = wgt_val[i]/np.abs(s1[i])
+                    j += 1
+            s2 = s2[0:j]
+            z2 = z2[0:j]
+            w2 = w2[0:j]
+            x2 = x2[0:j]
             arr_eff1[i_r1] = efficiency(z2, s1, s_max)
         if (unwgt=="pap"):                           # paper method for the unwgt
             w_max = my_max(wgt_val)                  # unwgt done respect w_max
             arr_wmax[i_r1] = w_max
+            j = 0
             for i in range(len(s1)):                 # first unwgt, based on the predicted wgt
                 if (np.abs(s1[i])/w_max > rand1[i]):
-                    s2 = np.append(s2, s1[i])
-                    wgt_z = np.sign(s1[i])*np.maximum(1, np.abs(s1[i])/w_max)
-                    z2 = np.append(z2, wgt_z)
-                    w2 = np.append(w2, wgt_val[i])    
-                    x2 = np.append(x2, wgt_val[i]/np.abs(s1[i]))
+                    s2[j] = s1[i] 
+                    z2[j] = np.sign(s1[i])*np.maximum(1, np.abs(s1[i])/w_max)
+                    w2[j] = wgt_val[i]    
+                    x2[j] = wgt_val[i]/np.abs(s1[i])
+                    j+=1
+            s2 = s2[0:j]
+            z2 = z2[0:j]
+            w2 = w2[0:j]
+            x2 = x2[0:j]
             arr_eff1[i_r1] = efficiency(z2, s1, w_max)
 
         time_6 = time.time()
@@ -696,34 +700,45 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
 
             time_7 = time.time()
 
-            s3 = np.empty(0)                         # predicted wgt kept by second unwgt
-            z3 = np.empty(0)                         # predicted wgt after second unwgt
-            x3 = np.empty(0)
-            ztot = np.empty(0)
-            z3_0ow = np.empty(0)                     # final events with no overwgt
-            z3_1ow = np.empty(0)                     # final events with overwgt only in the first unwgt (reabsorbed)
-            z3_2ow = np.empty(0)                     # final events with overwgt only in the second unwgt 
-            z3_12ow = np.empty(0)                    # final events with overwgt in both unwgt
+            s3 = np.empty(len(s2))                         # predicted wgt kept by second unwgt
+            z3 = np.empty(len(s2))                         # predicted wgt after second unwgt
+            x3 = np.empty(len(s2))
+            z3_0ow = np.empty(len(s2))                     # final events with no overwgt
+            z3_1ow = np.empty(len(s2))                     # final events with overwgt only in the first unwgt (reabsorbed)
+            z3_2ow = np.empty(len(s2))                     # final events with overwgt only in the second unwgt 
+            z3_12ow = np.empty(len(s2))                    # final events with overwgt in both unwgt
             if (unwgt=="new"):
                 if (maxfunc=="mqr"):
     # # # # #                x_max = my_max(s2, x2*np.abs(z2))
                     x_max = my_max(x2*np.abs(z2))              # changed x_max definition as s_max
                 if (maxfunc=="mmr"):
                     x_max = my_max(x2*np.abs(z2)) 
+                j, j0, j1, j2, j12 = 0, 0, 0, 0, 0
                 for i in range(len(s2)):                 # second unweighting
                     if ((np.abs(z2[i])*x2[i]/x_max) > rand2[i]):
-                        s3 = np.append(s3, s2[i])
-                        wgt_z = np.sign(z2[i])*np.maximum(1, np.abs(z2[i])*x2[i]/x_max)
-                        z3 = np.append(z3, wgt_z)
-                        x3 = np.append(x3, x2[i])
-                        if (z2[i]==1 and wgt_z ==1):
-                            z3_0ow = np.append(z3_0ow, wgt_z)
-                        if (z2[i]>1 and wgt_z ==1):
-                            z3_1ow = np.append(z3_1ow, wgt_z)
-                        if (z2[i]==1 and wgt_z >1):
-                            z3_2ow = np.append(z3_2ow, wgt_z)
-                        if (z2[i]>1 and wgt_z >1):
-                            z3_12ow = np.append(z3_12ow, wgt_z)
+                        s3[j] = s2[i]
+                        z3[j] = np.sign(z2[i])*np.maximum(1, np.abs(z2[i])*x2[i]/x_max)
+                        x3[j] = x2[i]
+                        if (z2[i]==1 and z3[j]==1):
+                            z3_0ow[j0] = 1
+                            j0 += 1
+                        if (z2[i]>1 and z3[j]==1):
+                            z3_1ow[j1] = 1
+                            j1 += 1
+                        if (z2[i]==1 and z3[j]>1):
+                            z3_2ow[j2] = z3[j]
+                            j2 +=1
+                        if (z2[i]>1 and z3[j]>1):
+                            z3_12ow[j12] = z3[j]
+                            j12 += 1
+                        j += 1 
+                s3 = s3[0:j] 
+                z3 = z3[0:j] 
+                x3 = z3[0:j]
+                z3_0ow = z3_0ow[0:j0]
+                z3_1ow = z3_1ow[0:j1] 
+                z3_2ow = z3_2ow[0:j2] 
+                z3_12ow = z3[0:j12]
                 mtx_eff2[i_r1, i_r2] = efficiency(z3, x2, x_max)
                 mtx_feff[i_r1, i_r2] = effective_gain(z3, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
 
@@ -768,26 +783,42 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
 
 
             if (unwgt=="pap"):
+                ztot = np.empty(len(s2))
+    
                 if (maxfunc=="mqr"):
     # # # # #                x_max = my_max(s2, x2)
                     x_max = my_max(s2, x2) 
                 if (maxfunc=="mmr"):
                     x_max = my_max(x2) 
+                j, j0, j1, j2, j12 = 0, 0, 0, 0, 0
                 for i in range(len(s2)):                 # second unweighting
                     if ((x2[i]/x_max) > rand2[i]):
-                        s3 = np.append(s3, s2[i])
-                        wgt_z = np.maximum(1, x2[i]/x_max)
-                        z3 = np.append(z3, wgt_z)
-                        ztot = np.append(ztot, z2[i]*wgt_z)
-                        x3 = np.append(x3, x2[i])
-                        if (z2[i]==1 and wgt_z ==1):
-                            z3_0ow = np.append(z3_0ow, ztot[len(ztot)-1])
-                        if (z2[i]>1 and wgt_z ==1):
-                            z3_1ow = np.append(z3_1ow, ztot[len(ztot)-1])
-                        if (z2[i]==1 and wgt_z >1):
-                            z3_2ow = np.append(z3_2ow, ztot[len(ztot)-1])
-                        if (z2[i]>1 and wgt_z >1):
-                            z3_12ow = np.append(z3_12ow, ztot[len(ztot)-1])
+                        s3[j] = s2[i]
+                        z3[j] = np.maximum(1, x2[i]/x_max)
+                        ztot[j] = z2[i]*z3[j]
+                        x3[j] = x2[i] 
+                        if (z2[i]==1 and z3[j]==1):
+                            z3_0ow[j0] = 1
+                            j0 += 1
+                        if (z2[i]>1 and z3[j]==1):
+                            z3_1ow[j1] = 1
+                            j1 += 1
+                        if (z2[i]==1 and z3[j]>1):
+                            z3_2ow[j2] = z3[j]
+                            j2 +=1
+                        if (z2[i]>1 and z3[j]>1):
+                            z3_12ow[j12] = z3[j]
+                            j12 += 1
+                        j += 1
+                s3 = s3[0:j] 
+                x3 = z3[0:j]
+                z3 = z3[0:j]
+                ztot = ztot[0:j] 
+                z3_0ow = z3_0ow[0:j0]
+                z3_1ow = z3_1ow[0:j1] 
+                z3_2ow = z3_2ow[0:j2] 
+                z3_12ow = z3_12ow[0:j12]
+
                 mtx_eff2[i_r1, i_r2] = efficiency(z3, x2, x_max) 
                 mtx_feff[i_r1, i_r2] = effective_gain(ztot, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
 
@@ -924,9 +955,10 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
         m_ee_train = m_ee_train * E_cm_pro / 2     # normalize m_e-e+ respect s_pro
         m_ee_val = m_ee_val * E_cm_pro / 2
 
-    with PdfPages("{}/plot_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset)) as pdf:    
+    #with PdfPages("{}/plot_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset)) as pdf: 
+    with PdfPages("/home/lb_linux/nn_unwgt/plot_.pdf") as pdf: 
         # plot train and input distribution
-        
+            
         if (input=="ptitf"):
             for i_pag in range(6):
 
@@ -1274,6 +1306,7 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
 
 
         fig, axs = plt.subplots(2, figsize=(8.27, 11.69)) 
+
         for i in range(len(arr_r)):                      # x, y labels of the f_eff colormap
             if (unwgt=="new"):
                 axs[0].text(-0.5, 0.3+i, "s_max: {}%".format(arr_r[i]*100), fontsize = 8)
