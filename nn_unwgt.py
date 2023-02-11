@@ -11,14 +11,15 @@ norm_sc = MinMaxScaler()
 stan_sc = StandardScaler()
 
 
-dataset = "7iter"            # 7iter, 8t10to6
+dataset = "7iter"            # 7iter, 10to6, 8t10to6
+channel = "G128"               # G128 , G304 
 load_module = False
 cluster = False
 
 if (cluster==True):
     path_scratch = "/globalscratch/ucl/cp3/lbeccati"
 if (cluster==False):
-    path_scratch = "/home/lb_linux/nn_unwgt"
+    path_scratch = "/home/lb_linux/nn_unwgt/{}".format(channel)
 
 
 
@@ -30,17 +31,20 @@ time_0 = time.time()
 
 # reading the momenta and weight of events
 if (dataset=="8t10to6"):
-    data = np.empty((8*10**6, 33)) 
+    n_data = 8*10**6
+if (dataset=="10to6"):
+    n_data = 10**6
 if (dataset=="7iter"):
-    data = np.empty((64000, 33)) 
-with open("{}/info_wgt_events_{}.txt".format(path_scratch, dataset), 'r') as infof:
+    n_data = 64000
+data = np.empty((n_data, 33)) 
+with open("{}/info_wgt_events_{}_{}.txt".format(path_scratch, channel, dataset), 'r') as infof:
     print("Start readind events")
     event = 0
     # in each line of info: (px, py, pz, E) of ga, gb; e-, e+, g1, g2, d, dbar and wgt 
     for line in infof.readlines():
         data[event, :] = [float(i) for i in line.split()]
-        if (event%(8*10**4)==0):
-            print("Events read: {}% in {:.2f}s".format((event/(8*10**4)), time.time()-time_0))
+        if (event%(n_data//100)==0):
+            print("Events read: {}% in {:.2f}s".format((event/(n_data//100)), time.time()-time_0))
         event +=1
 #    if (output=="cno"):
 #        data = [data[i] for i in range(len(data)) if data[i, -1]>10**(-9)]
@@ -58,7 +62,7 @@ time_read = time.time() - time_0
 # settings
 ##################################################
 
-tests = [111111]
+tests = [121411]  # 221411, 211211, 221111, 211111, 221311, 211311  
 
 for test in tests:
     # test = ABCDEFG
@@ -117,16 +121,22 @@ for test in tests:
 
     seed_all = 2 
 
-    n_epochs = 5 
+    n_epochs = 500 
     learn_rate = 0.001
     ratio_train_val = 3                              # number of training events over number of validation events
 
-    eff1_st = 0.683                                  # standard effeciencies for the first unwgt
-    eff2_st = 0.020                                  # standard effeciencies for the second unwgt
+    if (channel=="G128"):
+        eff1_st = 0.683                                  # standard effeciencies for the first unwgt
+        eff2_st = 0.020                                  # standard effeciencies for the second unwgt
+    if (channel=="G304"):
+        eff1_st =                                   # standard effeciencies for the first unwgt
+        eff2_st =                                   # standard effeciencies for the second unwgt
     E_cm_pro = 13000                                 # energy of cm of protons
     t_ratio = 0.002       # t_surrogate / t_standard = [1/20, 1/50, 1/100, 1/500], t: time to compute one event
 
     part_name = ["e-", "e+", "g1", "g2", "d", "d~"]
+
+    
     # efficiencies functions
     def f_kish(z):                                   # kish factor
         if (len(z)==0):
@@ -134,9 +144,9 @@ for test in tests:
         res = np.sum(z)**2 / (len(z) * np.sum(z**2))
         return res
 
-    def efficiency(z_f, s_i, s_i_max):                 # efficiency of the unwgt 
+    def efficiency(s_i, s_i_max):                 # efficiency of the unwgt 
         #eff = f_kish(z_f) * np.sum(s_i) / (len(s_i) * s_i_max)
-        # eff given by the sum of the probability to keep each event, to avoid fluctuations
+        # eff given by the sum of the probability to keep each event (to avoid fluctuations), s_i: initial weight
         eff = np.sum(np.minimum(np.abs(s_i), s_i_max)) / (len(s_i)*s_i_max)
         return eff 
 
@@ -361,6 +371,7 @@ for test in tests:
     time_init = time_2 - time_1
 
 
+
     ##################################################
     # prediction of weights
     ##################################################
@@ -454,7 +465,7 @@ for test in tests:
 
 
     if (load_module==True):
-        model = tf.keras.models.load_model("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
+        model = tf.keras.models.load_model("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
 
     else:
         opt = tf.keras.optimizers.Adam(learning_rate=learn_rate)
@@ -467,7 +478,7 @@ for test in tests:
         time_train = time.time() - time_2
 
         # save model
-        model.save("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
+        model.save("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
 
 
     if (load_module==False):
@@ -477,7 +488,8 @@ for test in tests:
         axs_tr.set_yscale('log')
         axs_tr.set(xlabel="epochs", ylabel="loss")
         axs_tr.legend(loc=0)
-        fig_tr.savefig("{}/train_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
+        fig_tr.savefig("{}/train_{}_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
+        plt.close(fig_tr)
 
 
 
@@ -485,50 +497,49 @@ for test in tests:
     # definitions of maxima functions
     ##################################################
 
-    def max_quantile_reduction(array_s, array_x=[]):
+    def max_quantile_reduction(array_s, r_ow, array_x=[]):
         # define a reduced maximum such that the overweights' remaining contribution to the total sum of weights is lower or equal to r*total sum
         part_sum = 0 
         if (len(array_x) == 0):                      # max for s_i
             max_s = 0
-            if (r <= 0):                             # to test overwgt maxima
-                max_s = max(array_s) * (1-r)
+            if (r_ow <= 0):                             # to test overwgt maxima
+                max_s = max(array_s) * (1-r_ow)
                 return max_s
             else:
                 arr_s = np.sort(array_s)             # sorted s_i to determine s_max
                 tot_sum = np.sum(arr_s)
                 for i in range(len(arr_s)):
                     part_sum += arr_s[i]
-                    if (part_sum >= tot_sum*(1-r)):
+                    if (part_sum >= tot_sum*(1-r_ow)):
                         max_s = np.abs(arr_s[i])
                         break
                 return max_s        
         else:                                        # max for x_i
             max_x = 0                                # for x_i the total sum is given by the sum over x_i*s_i
-            if (r <= 0):
-                max_x = max(array_x) * (1-r)
+            if (r_ow <= 0):
+                max_x = max(array_x) * (1-r_ow)
                 return max_x
             else:
                 arr_s = [s for _,s in sorted(zip(array_x, array_s))]         # sort s_i respect to x_i for the second unwgt
                 arr_x = np.sort(array_x)
                 tot_sum = np.sum(arr_s*arr_x) 
-                for i in range(len(arr_s)):
+                for i in range(len(arr_x)):
                     part_sum += arr_s[i]*arr_x[i]
                     if (part_sum >= tot_sum*(1-r)):
                         max_x = np.abs(arr_x[i])
                         break
                 return max_x
 
-    def max_median_reduction(arr):
+    def max_median_reduction(arr, r_ow):
         # define a reduced maximum such that it is the median over the maxima of different unweighted samples
-        if (r <= 0):                                 # to test overwgt maxima
-            max_s = max(arr) * (1-r)
+        if (r_ow <= 0):                                 # to test overwgt maxima
+            max_s = max(arr) * (1-r_ow)
             return max_s
         else:
             n_max = 50                               # number of maxima used for the median
             arr = np.flip(np.sort(arr))              # reversed sorted input array
             arr_max = np.zeros(n_max)
-            r = arr_r[i_r]
-            max_r = arr[0] * r 
+            max_r = arr[0] * r_ow 
             for j1 in range(n_max):
                 rand_max = np.random.rand(len(arr))
                 for j2 in range(len(arr)):
@@ -542,18 +553,19 @@ for test in tests:
 
     if (maxfunc=="mqr"): 
         my_max = max_quantile_reduction
-        arr_r = [0.2, 0.1, 0.05, 0.01] 
-        #arr_r = [0.7, 0.5, 0.3, 0.1] 
+        arr_r1 = [0.2, 0.1, 0.05, 0.01] 
+        arr_r2 = [0.04, 0.03, 0.02, 0.01] 
 
     if (maxfunc=="mmr"):
         my_max = max_median_reduction
-        arr_r = [100, 50, 10, 5]
+        arr_r1 = [100, 50, 10, 5]
+        arr_r2 = [100, 50, 10, 5]
 
     if (unwgt=="new"):
-        arr_smax = np.empty(len(arr_r))
+        arr_smax = np.empty(len(arr_r1))
     if (unwgt=="pap"):
-        arr_wmax = np.empty(len(arr_r))
-    arr_eff1 = np.empty(len(arr_r))
+        arr_wmax = np.empty(len(arr_r1))
+    arr_eff1 = np.empty(len(arr_r1))
 
 
 
@@ -562,7 +574,7 @@ for test in tests:
     ##################################################
     
     cmap = plt.get_cmap('plasma')
-    colors = cmap(np.linspace(0, 1, len(arr_r))) 
+    colors = cmap(np.linspace(0, 1, len(arr_r1))) 
 
     bins_tr1 = np.linspace(0, 1, 50)
     bins_tr2 = np.linspace(-0.5, 0.5, 50)
@@ -606,11 +618,11 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
     # unweighting
     ##################################################
 
-    mtx_xmax, mtx_eff2, mtx_kish, mtx_feff = np.empty((len(arr_r), len(arr_r))), np.empty((len(arr_r), len(arr_r))), np.empty((len(arr_r), len(arr_r))), np.empty((len(arr_r), len(arr_r)))
+    mtx_xmax, mtx_eff2, mtx_kish, mtx_feff = np.empty((len(arr_r1), len(arr_r2))), np.empty((len(arr_r1), len(arr_r2))), np.empty((len(arr_r1), len(arr_r2))), np.empty((len(arr_r1), len(arr_r2)))
 
     time_3 = time.time()
 
-    s1_pred = model.predict(X_val)
+    s1_pred = model.predict(tf.convert_to_tensor(X_val))
     s1_pred = np.reshape(s1_pred, len(s1_pred))
     if (output=="lno"):
         s1 = np.reshape(s1_pred, (len(s1_pred), 1))
@@ -634,6 +646,8 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
         s1 = s1_pred 
     if(output=="lnw"):
         s1 = np.e**(-s1) 
+    s1 = np.double(s1)
+
 
     time_4 = time.time()
     time_pred = time_4 - time_3
@@ -641,10 +655,11 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
     time_unwgt1 = 0
     time_unwgt2 = 0
 
-    for i_r1 in range(len(arr_r)):                   # loop to test different maxima conditions
+
+    for i_r1 in range(len(arr_r1)):                   # loop to test different maxima conditions
 
         np.random.seed(seed_all)                     # each test has the same seed
-        r = arr_r[i_r1]                              # parameter of the maxima function for the first unwgt
+        r = arr_r1[i_r1]                              # parameter of the maxima function for the first unwgt
 
         time_5 = time.time()
 
@@ -656,7 +671,7 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
         x2 = np.empty(len(s1))                             # ratio between real and predicted wgt of kept events
 
         if (unwgt=="new"):                           # new method for the unweighting
-            s_max = my_max(s1)
+            s_max = my_max(s1, r_ow=r)
             arr_smax[i_r1] = s_max
             j = 0
             for i in range(len(s1)):                 # first unweighting, based on the predicted wgt
@@ -670,9 +685,9 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
             z2 = z2[0:j]
             w2 = w2[0:j]
             x2 = x2[0:j]
-            arr_eff1[i_r1] = efficiency(z2, s1, s_max)
+            arr_eff1[i_r1] = efficiency(s1, s_max)
         if (unwgt=="pap"):                           # paper method for the unwgt
-            w_max = my_max(wgt_val)                  # unwgt done respect w_max
+            w_max = my_max(wgt_val, r_ow=r)                  # unwgt done respect w_max
             arr_wmax[i_r1] = w_max
             j = 0
             for i in range(len(s1)):                 # first unwgt, based on the predicted wgt
@@ -686,17 +701,17 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
             z2 = z2[0:j]
             w2 = w2[0:j]
             x2 = x2[0:j]
-            arr_eff1[i_r1] = efficiency(z2, s1, w_max)
+            arr_eff1[i_r1] = efficiency(s1, w_max)
 
         time_6 = time.time()
         time_unwgt1 += (time_6 - time_5)
 
-        axs_ws[1].hist(x=x2*np.abs(z2), bins=bins_ws, label="r1={}%".format(arr_r[i_r1]*100), color=colors[i_r1], histtype='step', lw=2, alpha=0.7)
+        axs_ws[1].hist(x=x2*np.abs(z2), bins=bins_ws, label="r1={}%".format(arr_r1[i_r1]*100), color=colors[i_r1], histtype='step', lw=2, alpha=0.7)
 
-        for i_r2 in range(len(arr_r)):               # to test all combinations of s_max and x_max 
+        for i_r2 in range(len(arr_r2)):               # to test all combinations of s_max and x_max 
             # second unweighting
             rand2 = np.random.rand(len(x2))
-            r = arr_r[i_r2]                          # parameter of the maxima function for the second unwgt
+            r = arr_r2[i_r2]                          # parameter of the maxima function for the second unwgt
 
             time_7 = time.time()
 
@@ -709,10 +724,10 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
             z3_12ow = np.empty(len(s2))                    # final events with overwgt in both unwgt
             if (unwgt=="new"):
                 if (maxfunc=="mqr"):
-    # # # # #                x_max = my_max(s2, x2*np.abs(z2))
-                    x_max = my_max(x2*np.abs(z2))              # changed x_max definition as s_max
+                    x_max = my_max(s2, r, x2*np.abs(z2))
+                    # # # # #x_max = my_max(x2*np.abs(z2), r_ow=r)              # changed x_max definition as s_max
                 if (maxfunc=="mmr"):
-                    x_max = my_max(x2*np.abs(z2)) 
+                    x_max = my_max(x2*np.abs(z2), r_ow=r) 
                 j, j0, j1, j2, j12 = 0, 0, 0, 0, 0
                 for i in range(len(s2)):                 # second unweighting
                     if ((np.abs(z2[i])*x2[i]/x_max) > rand2[i]):
@@ -739,7 +754,7 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
                 z3_1ow = z3_1ow[0:j1] 
                 z3_2ow = z3_2ow[0:j2] 
                 z3_12ow = z3[0:j12]
-                mtx_eff2[i_r1, i_r2] = efficiency(z3, x2, x_max)
+                mtx_eff2[i_r1, i_r2] = efficiency(x2, x_max)
                 mtx_feff[i_r1, i_r2] = effective_gain(z3, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
 
                 time_8 = time.time()
@@ -750,32 +765,32 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
                 if (len(z3)>=1):
                     if (i_r1==0):
                         axs_zk1[i_r2].hist((z3_0ow, z3_1ow, z3_2ow, z3_12ow), bins=np.linspace(0.995, max(z3)+0.05, 15), 
-                            color=['blue', 'yellow', 'orange', 'red'], label="""s_max {}% \nx_max{}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
-                                arr_r[i_r1]*100, arr_r[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
+                            color=['blue', 'yellow', 'orange', 'red'], label="""ow_s: {}% \now_x: {}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
+                                arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
                     axs_zk1[i_r2].set_ylim([1, 10**5])
                     axs_zk1[i_r2].set_yscale('log')
                     axs_zk1[i_r2].legend(loc='best')
                     axs_zk1[i_r2].set(xlabel="z3", ylabel="dN/dz3")
                     if (i_r1==1):
                         axs_zk2[i_r2].hist((z3_0ow, z3_1ow, z3_2ow, z3_12ow), bins=np.linspace(0.995, max(z3)+0.05, 15), 
-                            color=['blue', 'yellow', 'orange', 'red'], label="""s_max {}% \nx_max{}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
-                                arr_r[i_r1]*100, arr_r[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
+                            color=['blue', 'yellow', 'orange', 'red'], label="""ow_s: {}% \now_x: {}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
+                                arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
                     axs_zk2[i_r2].set_ylim([1, 10**5])
                     axs_zk2[i_r2].set_yscale('log')
                     axs_zk2[i_r2].legend(loc='best')
                     axs_zk2[i_r2].set(xlabel="z3", ylabel="dN/dz3")
                     if (i_r1==2):
                         axs_zk3[i_r2].hist((z3_0ow, z3_1ow, z3_2ow, z3_12ow), bins=np.linspace(0.995, max(z3)+0.05, 15), 
-                            color=['blue', 'yellow', 'orange', 'red'], label="""s_max {}% \nx_max{}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
-                                arr_r[i_r1]*100, arr_r[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
+                            color=['blue', 'yellow', 'orange', 'red'], label="""ow_s: {}% \now_x: {}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
+                                arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
                     axs_zk3[i_r2].set_ylim([1, 10**5])
                     axs_zk3[i_r2].set_yscale('log')
                     axs_zk3[i_r2].legend(loc='best')
                     axs_zk3[i_r2].set(xlabel="z3", ylabel="dN/dz3")
                     if (i_r1==3):
                         axs_zk4[i_r2].hist((z3_0ow, z3_1ow, z3_2ow, z3_12ow), bins=np.linspace(0.995, max(z3)+0.05, 15), 
-                            color=['blue', 'yellow', 'orange', 'red'], label="""s_max {}% \nx_max{}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
-                                arr_r[i_r1]*100, arr_r[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
+                            color=['blue', 'yellow', 'orange', 'red'], label="""ow_s: {}% \now_x: {}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
+                                arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
                     axs_zk4[i_r2].set_ylim([1, 10**5])
                     axs_zk4[i_r2].set_yscale('log')
                     axs_zk4[i_r2].legend(loc='best')
@@ -787,9 +802,9 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
     
                 if (maxfunc=="mqr"):
     # # # # #                x_max = my_max(s2, x2)
-                    x_max = my_max(s2, x2) 
+                    x_max = my_max(s2, x2, r_ow=r) 
                 if (maxfunc=="mmr"):
-                    x_max = my_max(x2) 
+                    x_max = my_max(x2, r_ow=r) 
                 j, j0, j1, j2, j12 = 0, 0, 0, 0, 0
                 for i in range(len(s2)):                 # second unweighting
                     if ((x2[i]/x_max) > rand2[i]):
@@ -819,7 +834,7 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
                 z3_2ow = z3_2ow[0:j2] 
                 z3_12ow = z3_12ow[0:j12]
 
-                mtx_eff2[i_r1, i_r2] = efficiency(z3, x2, x_max) 
+                mtx_eff2[i_r1, i_r2] = efficiency(x2, x_max) 
                 mtx_feff[i_r1, i_r2] = effective_gain(ztot, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
 
                 time_8 = time.time()
@@ -830,103 +845,44 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
                 if (len(z3)>=1):
                     if (i_r1==0):
                         axs_zk1[i_r2].hist((z3_0ow, z3_1ow, z3_2ow, z3_12ow), bins=np.linspace(0.995, max(z3)+0.05, 15), 
-                            color=['blue', 'yellow', 'orange', 'red'], label="""s_max {}% \nx_max{}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
-                                arr_r[i_r1]*100, arr_r[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
+                            color=['blue', 'yellow', 'orange', 'red'], label="""ow_s: {}% \now_x: {}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
+                                arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
                     axs_zk1[i_r2].set_ylim([1, 10**5])
                     axs_zk1[i_r2].set_yscale('log')
                     axs_zk1[i_r2].legend(loc='best')
                     axs_zk1[i_r2].set(xlabel="z3", ylabel="dN/dz3")
                     if (i_r1==1):
                         axs_zk2[i_r2].hist((z3_0ow, z3_1ow, z3_2ow, z3_12ow), bins=np.linspace(0.995, max(z3)+0.05, 15), 
-                            color=['blue', 'yellow', 'orange', 'red'], label="""s_max {}% \nx_max{}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
-                                arr_r[i_r1]*100, arr_r[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
+                            color=['blue', 'yellow', 'orange', 'red'], label="""ow_s: {}% \now_x: {}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
+                                arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
                     axs_zk2[i_r2].set_ylim([1, 10**5])
                     axs_zk2[i_r2].set_yscale('log')
                     axs_zk2[i_r2].legend(loc='best')
                     axs_zk2[i_r2].set(xlabel="z3", ylabel="dN/dz3")
                     if (i_r1==2):
                         axs_zk3[i_r2].hist((z3_0ow, z3_1ow, z3_2ow, z3_12ow), bins=np.linspace(0.995, max(z3)+0.05, 15), 
-                            color=['blue', 'yellow', 'orange', 'red'], label="""s_max {}% \nx_max{}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
-                                arr_r[i_r1]*100, arr_r[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
+                            color=['blue', 'yellow', 'orange', 'red'], label="""ow_s: {}% \now_x: {}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
+                                arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
                     axs_zk3[i_r2].set_ylim([1, 10**5])
                     axs_zk3[i_r2].set_yscale('log')
                     axs_zk3[i_r2].legend(loc='best')
                     axs_zk3[i_r2].set(xlabel="z3", ylabel="dN/dz3")
                     if (i_r1==3):
                         axs_zk4[i_r2].hist((z3_0ow, z3_1ow, z3_2ow, z3_12ow), bins=np.linspace(0.995, max(z3)+0.05, 15), 
-                            color=['blue', 'yellow', 'orange', 'red'], label="""s_max {}% \nx_max{}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
-                                arr_r[i_r1]*100, arr_r[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
+                            color=['blue', 'yellow', 'orange', 'red'], label="""ow_s: {}% \now_x: {}% \nf_kish: {:.3f} \nN_0ow: {} \nN_1ow: {} \nN_2ow: {} \nN_12ow: {}""".format(
+                                arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2], len(z3_0ow), len(z3_1ow), len(z3_2ow), len(z3_12ow)))
                     axs_zk4[i_r2].set_ylim([1, 10**5])
                     axs_zk4[i_r2].set_yscale('log')
                     axs_zk4[i_r2].legend(loc='best')
                     axs_zk4[i_r2].set(xlabel="z3", ylabel="dN/dz3")
 
             mtx_xmax[i_r1, i_r2] = x_max
-            #axs_eff[1].annotate(arr_r[i_r2], (x_max, mtx_eff2[i_r1, i_r2]))
+            #axs_eff[1].annotate(arr_r2[i_r2], (x_max, mtx_eff2[i_r1, i_r2]))
 
 
+    time_unwgt1 = time_unwgt1 / len(arr_r1)
+    time_unwgt2 = time_unwgt1 / (len(arr_r2)**2)
 
-    ##################################################
-    # unweighting of standard sample with fixed kish factor
-    ##################################################
-
-    def effective_gain_st(eff1, eff2, eff_st):       # effective gain factor where the standard method computes all the matrix elements
-        t_ratio = 0.002
-        res = 1 / (t_ratio*eff_st/(eff1*eff2) + eff_st/eff2)
-        return res
-    """
-    # unweighting of the standard sample with only the second unweighting to achieve the same kish factor of the surrogate method for a better comparison
-    mtx_eff_st, mtx_feff_st =  np.zeros((len(arr_r), len(arr_r))), np.zeros((len(arr_r), len(arr_r)))
-    s_st2 = s1                                       # no first unweighting
-    w_st2 = wgt_val 
-    x_st2 = w_st2 / np.abs(s_st2)
-    rand_st = np.random.rand(len(s_st2))
-    for i_r1 in range(len(arr_r)):
-        for i_r2 in range(len(arr_r)):
-            if (mtx_kish[i_r1, i_r2]<1):             # if kish_su<1, we require r2_st such that kish_st=kish_su
-                kish_st = 0 
-                r = (1 - mtx_kish[i_r1, i_r2]) * 2   # 
-                for j in range(20): 
-                    x_max = my_max(s_st2, x_st2)
-                    s_st3 = np.empty(0)
-                    z_st3 = np.empty(0)
-                    x_st3 = np.empty(0)
-                    for i in range(len(s_st2)):                 # second unweighting
-                        if ((x_st2[i]/x_max)>rand_st[i] and (x_st2[i]/x_max)<10):
-                            s_st3 = np.append(s_st3, s_st2[i])
-                            wgt_z = np.sign(s_st2[i])*np.maximum(1, x_st2[i]/x_max)
-                            z_st3 = np.append(z_st3, wgt_z)
-                            x_st3 = np.append(x_st3, x_st2[i])
-                            kish_st = f_kish(z_st3)
-                    if (np.abs(mtx_kish[i_r1, i_r2]-kish_st)/mtx_kish[i_r1, i_r2] <= 0.01):
-                        break
-                    else:                            # if kish_st!=kish_su we modify r and perform again the second unweighting
-                        r += (kish_st - mtx_kish[i_r1, i_r2])
-            else:                                    # if kish_su=1 we use the r2_st=r2_su
-                r = arr_r[i_r2]
-                x_max = my_max(s_st2, x_st2)
-                s_st3 = np.empty(0)
-                z_st3 = np.empty(0)
-                x_st3 = np.empty(0)
-                for i in range(len(s_st2)):                 # second unweighting
-                    if ((x_st2[i]/x_max) > rand_st[i]):
-                        s_st3 = np.append(s_st3, s_st2[i])
-                        wgt_z = np.sign(s_st2[i])*np.maximum(1, x_st2[i]/x_max)
-                        z_st3 = np.append(z_st3, wgt_z)
-                        x_st3 = np.append(x_st3, x_st2[i])
-            mtx_eff_st[i_r1, i_r2] = efficiency(z_st3, x_st2, x_max)
-            mtx_feff_st[i_r1, i_r2] = effective_gain_st(arr_eff1[i_r1], mtx_eff2[i_r1, i_r2], mtx_eff_st[i_r1, i_r2])
-        if (unwgt=="new"):
-            axs_eff[3].plot(mtx_kish[i_r1], mtx_feff_st[i_r1], marker='.', color=colors[i_r1], label="s_max = {:.2e}".format(arr_smax[i_r1])) 
-        if (unwgt=="pap"):
-            axs_eff[3].plot(mtx_kish[i_r1], mtx_feff_st[i_r1], marker='.', color=colors[i_r1], label="w_max = {:.2e}".format(arr_wmax[i_r1])) 
-    axs_eff[3].set(xlabel="Kish factor", ylabel="f_eff_st")
-    axs_eff[3].legend
-    axs_eff[3].legend(loc='best')
-    """
-
-    time_unwgt1 = time_unwgt1 / len(arr_r)
-    time_unwgt2 = time_unwgt1 / (len(arr_r)**2)
 
 
     ##################################################
@@ -955,8 +911,8 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
         m_ee_train = m_ee_train * E_cm_pro / 2     # normalize m_e-e+ respect s_pro
         m_ee_val = m_ee_val * E_cm_pro / 2
 
-    #with PdfPages("{}/plot_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset)) as pdf: 
-    with PdfPages("/home/lb_linux/nn_unwgt/plot_.pdf") as pdf: 
+    #with PdfPages("/home/lb_linux/nn_unwgt/plot_.pdf") as pdf: 
+    with PdfPages("{}/plot_{}_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset)) as pdf: 
         # plot train and input distribution
             
         if (input=="ptitf"):
@@ -969,17 +925,18 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                 n_epochs, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
             
                 if (i_pag==0):
-                    axs[0].set_yscale('log')
                     axs[0].set(xlabel="{}".format(input_name[0]), ylabel="dN/d({})".format(input_name[0]))
                     axs[0].hist(x=X_train[:, 0], bins=bins_tr1, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[0]), color='purple', histtype='step', lw=2, alpha=0.7)
                     axs[0].hist(x=X_val[:, 0], bins=bins_tr1, weights=wgt_val, label="{}_val".format(input_name[0]), color='teal', histtype='step', lw=2, alpha=0.7)
                     axs[0].hist(x=X_val[:, 0], bins=bins_tr1, weights=s1, label="{}_pred".format(input_name[0]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}".format(input_name[1]), ylabel="dN/d({})".format(input_name[1]))
                     axs[1].hist(x=X_train[:, 1], bins=bins_beta, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[1]), color='purple', histtype='step', lw=2, alpha=0.7)
                     axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=wgt_val, label="{}_val".format(input_name[1]), color='teal', histtype='step', lw=2, alpha=0.7)
                     axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=s1, label="{}_pred".format(input_name[1]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
                     axs[2].set(xlabel="m_e-e+ [GeV]", ylabel="dN/d(m_e-e+)")
@@ -1002,6 +959,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[1].hist(x=X_train[:, i_pag*3], bins=bins_theta, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[3]), color='purple', histtype='step', lw=2, alpha=0.7)
                     axs[1].hist(x=X_val[:, i_pag*3], bins=bins_theta, weights=wgt_val, label="{}_val".format(input_name[3]), color='teal', histtype='step', lw=2, alpha=0.7)
                     axs[1].hist(x=X_val[:, i_pag*3], bins=bins_theta, weights=s1, label="{}_pred".format(input_name[3]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
                     if (i_pag<5):
@@ -1009,11 +967,13 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                         axs[2].hist(x=X_train[:, i_pag*3+1], bins=bins_phi, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[4]), color='purple', histtype='step', lw=2, alpha=0.7)
                         axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_phi, weights=wgt_val, label="{}_val".format(input_name[4]), color='teal', histtype='step', lw=2, alpha=0.7)
                         axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_phi, weights=s1, label="{}_pred".format(input_name[4]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                        axs[2].set_yscale('log')
                         axs[2].legend(loc='best')
                     else:
                         axs[2].remove()
                 
                 pdf.savefig(fig)
+                plt.close(fig)
 
         if (input=="p3pap"):
             for i_pag in range(7):
@@ -1068,6 +1028,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[2].legend(loc='best')
 
                 pdf.savefig(fig)
+                plt.close(fig)
 
 
         # plot wgt mean respect inputs
@@ -1089,6 +1050,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[0].plot(bins_tr1[1:], w_mean_tr, label="{}_train".format(input_name[0]), color='purple', marker='.', alpha=0.7)
                     axs[0].plot(bins_tr1[1:], w_mean_va, label="{}_val".format(input_name[0]), color='teal', marker='.', alpha=0.7)
                     axs[0].plot(bins_tr1[1:], w_mean_pr, label="{}_pred".format(input_name[0]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}".format(input_name[1]), ylabel="dN/d({})".format(input_name[1]))
@@ -1099,6 +1061,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[1].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[1]), color='purple', marker='.', alpha=0.7)
                     axs[1].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[1]), color='teal', marker='.', alpha=0.7)
                     axs[1].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[1]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
                     axs[2].set(xlabel="m_e-e+ [GeV]", ylabel="dN/d(m_e-e+)")
@@ -1122,6 +1085,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[0].plot(bins_tr1[1:], w_mean_tr, label="{}_train".format(input_name[2]), color='purple', marker='.', alpha=0.7)
                     axs[0].plot(bins_tr1[1:], w_mean_va, label="{}_val".format(input_name[2]), color='teal', marker='.', alpha=0.7)
                     axs[0].plot(bins_tr1[1:], w_mean_pr, label="{}_pred".format(input_name[2]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}({})".format(input_name[3], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[3]))
@@ -1132,6 +1096,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[1].plot(bins_theta[1:], w_mean_tr, label="{}_train".format(input_name[3]), color='purple', marker='.', alpha=0.7)
                     axs[1].plot(bins_theta[1:], w_mean_va, label="{}_val".format(input_name[3]), color='teal', marker='.', alpha=0.7)
                     axs[1].plot(bins_theta[1:], w_mean_pr, label="{}_pred".format(input_name[3]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
                     if (i_pag<5):
@@ -1143,11 +1108,13 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                         axs[2].plot(bins_phi[1:], w_mean_tr, label="{}_train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
                         axs[2].plot(bins_phi[1:], w_mean_va, label="{}_val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
                         axs[2].plot(bins_phi[1:], w_mean_pr, label="{}_pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
+                        axs[2].set_yscale('log')
                         axs[2].legend(loc='best')
                     else:
                         axs[2].remove()
 
                 pdf.savefig(fig)
+                plt.close(fig)
 
         if (input=="p3pap"):
             for i_pag in range(7):
@@ -1167,6 +1134,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[0].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[0]), color='purple', marker='.', alpha=0.7)
                     axs[0].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[0]), color='teal', marker='.', alpha=0.7)
                     axs[0].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[0]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}".format(input_name[1]), ylabel="dN/d({})".format(input_name[1]))
@@ -1177,6 +1145,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[1].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[1]), color='purple', marker='.', alpha=0.7)
                     axs[1].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[1]), color='teal', marker='.', alpha=0.7)
                     axs[1].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[1]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
                     axs[2].set(xlabel="m_e-e+ [GeV]", ylabel="dN/d(m_e-e+)")
@@ -1200,6 +1169,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[0].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[2]), color='purple', marker='.', alpha=0.7)
                     axs[0].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[2]), color='teal', marker='.', alpha=0.7)
                     axs[0].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[2]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}({})".format(input_name[3], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[3]))
@@ -1210,6 +1180,7 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[1].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[3]), color='purple', marker='.', alpha=0.7)
                     axs[1].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[3]), color='teal', marker='.', alpha=0.7)
                     axs[1].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[3]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
                     axs[2].set(xlabel="{}({})".format(input_name[4], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[4]))
@@ -1220,9 +1191,11 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     axs[2].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
                     axs[2].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
                     axs[2].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[2].set_yscale('log')
                     axs[2].legend(loc='best')
 
                 pdf.savefig(fig)
+                plt.close(fig)
 
         fig, axs = plt.subplots(2, figsize=(8.27, 11.69)) 
 
@@ -1248,11 +1221,13 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         
         axs[1].set(xlabel="w", ylabel="w/s")
         h2 = axs[1].hist2d(wgt_val, x1, bins=[bins_w, bins_ws])
+        axs[1].hlines(y=1, xmin=bins_w[0], xmax=bins_w[-1], color='pink', linewidths=1, linestyles='dotted')
         axs[1].set_xscale('log')
         axs[1].set_yscale('log')
         plt.colorbar(h2[3], ax=axs[1]) 
 
         pdf.savefig(fig)
+        plt.close(fig)
 
         axs_ws[0].set(xlabel="w/s", ylabel="dN/d(w/s)")
         axs_ws[0].hist(x1, bins=bins_ws)
@@ -1267,6 +1242,7 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         axs_ws[1].set_yscale('log')
 
         pdf.savefig(fig_ws)
+        plt.close(fig_ws)
 
 
         # plot eff
@@ -1281,38 +1257,39 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         axs[0].legend(loc='best')
         axs[1].set(xlabel="x_max", ylabel="eff_2")
         """
-        for i_r1 in range(len(arr_r)):                   # to mark the values for max=real_max with larger points
-            #axs_eff[0].annotate(arr_r[i_r1], xy=(arr_smax[i_r1], arr_eff1[i_r1]))
-            if (arr_r[i_r1]==0):
+        for i_r1 in range(len(arr_r1)):                   # to mark the values for max=real_max with larger points
+            #axs_eff[0].annotate(arr_r1[i_r1], xy=(arr_smax[i_r1], arr_eff1[i_r1]))
+            if (arr_r1[i_r1]==0):
                 if (unwgt=="new"):
                     axs[0].scatter(arr_smax[i_r1], arr_eff1[i_r1], s=50)
                 if (unwgt=="pap"):
                     axs[0].scatter(arr_wmax[i_r1], arr_eff1[i_r1], s=50)
-            for i_r2 in range(len(arr_r)):
-                if (arr_r[i_r1]==0):
+            for i_r2 in range(len(arr_r2)):
+                if (arr_r1[i_r1]==0):
                     axs[1].scatter(mtx_xmax[i_r1, i_r2], mtx_eff2[i_r1, i_r2], s=50)
                 else:
-                    if (arr_r[i_r2]==0):
+                    if (arr_r2[i_r2]==0):
                         axs[1].scatter(mtx_xmax[i_r1, i_r2], mtx_eff2[i_r1, i_r2], s=50)
         """
         if (unwgt=="new"):
-            for i in range(len(arr_r)):                      # plot the curve of the efficiencies in function of the x_max with fixed s_max
-                axs[1].plot(mtx_xmax[i, :], mtx_eff2[i], marker='.', markersize=15, color=colors[i], label="s_max: {}%".format(arr_r[i]*100))
+            for i in range(len(arr_r2)):                      # plot the curve of the efficiencies in function of the x_max with fixed s_max
+                axs[1].plot(mtx_xmax[i, :], mtx_eff2[i], marker='.', markersize=15, color=colors[i], label="ow_s: {}%".format(arr_r1[i]*100))
         if (unwgt=="pap"):
-            for i in range(len(arr_r)):                      # plot the curve of the efficiencies in function of the x_max with fixed s_max
-                axs[1].plot(mtx_xmax[i, :], mtx_eff2[i], marker='.', markersize=15, color=colors[i], label="s_max: {}%".format(arr_r[i]*100))
+            for i in range(len(arr_r2)):                      # plot the curve of the efficiencies in function of the x_max with fixed s_max
+                axs[1].plot(mtx_xmax[i, :], mtx_eff2[i], marker='.', markersize=15, color=colors[i], label="ow_s: {}%".format(arr_r1[i]*100))
         axs[1].legend(loc='best')
         pdf.savefig(fig)
+        plt.close(fig)
 
 
         fig, axs = plt.subplots(2, figsize=(8.27, 11.69)) 
 
-        for i in range(len(arr_r)):                      # x, y labels of the f_eff colormap
+        for i in range(len(arr_r1)):                      # x, y labels of the f_eff colormap
             if (unwgt=="new"):
-                axs[0].text(-0.5, 0.3+i, "s_max: {}%".format(arr_r[i]*100), fontsize = 8)
+                axs[0].text(-0.5, 0.3+i, "ow_s: {}%".format(arr_r1[i]*100), fontsize = 8)
             if (unwgt=="pap"):
-                axs[0].text(-0.5, 0.3+i, "s_max: {}%".format(arr_r[i]*100), fontsize = 8)
-            axs[0].text(0.3+i, -0.5, "x_max {}%".format(arr_r[i]*100), fontsize = 8)
+                axs[0].text(-0.5, 0.3+i, "ow_s: {}%".format(arr_r1[i]*100), fontsize = 8)
+            axs[0].text(0.3+i, -0.5, "ow_x: {}%".format(arr_r2[i]*100), fontsize = 8)
         #axs[0].axis('off')
         axs[0].set_title(label="f_eff")
         axs[0].set_yticklabels([])
@@ -1322,12 +1299,12 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         plt.colorbar(h1, ax=axs[0], ticks=ticks_feff)
 
         # plot of plR (plot 1/R) 
-        x_plR = np.linspace(1, len(arr_r)*len(arr_r), len(arr_r)*len(arr_r))
-        y1_plR = [ 1 / ( arr_eff1[i//len(arr_r)] * ( mtx_kish[i//len(arr_r),i%len(arr_r)] * mtx_eff2[i//len(arr_r),i%len(arr_r)] / (eff1_st*eff2_st) - 1 ) ) for i in range(len(arr_r)*len(arr_r))] 
-        y10_plR = [ 1 / ( arr_eff1[i//len(arr_r)] * ( mtx_kish[i//len(arr_r),i%len(arr_r)] * mtx_eff2[i//len(arr_r),i%len(arr_r)] / (eff1_st*eff2_st*10) - 1 ) ) for i in range(len(arr_r)*len(arr_r))] 
+        x_plR = np.linspace(1, len(arr_r1)*len(arr_r2), len(arr_r1)*len(arr_r2))
+        y1_plR = [ 1 / ( arr_eff1[i//len(arr_r1)] * ( mtx_kish[i//len(arr_r1),i%len(arr_r2)] * mtx_eff2[i//len(arr_r1),i%len(arr_r2)] / (eff1_st*eff2_st) - 1 ) ) for i in range(len(arr_r1)*len(arr_r2))] 
+        y10_plR = [ 1 / ( arr_eff1[i//len(arr_r1)] * ( mtx_kish[i//len(arr_r1),i%len(arr_r2)] * mtx_eff2[i//len(arr_r1),i%len(arr_r2)] / (eff1_st*eff2_st*10) - 1 ) ) for i in range(len(arr_r1)*len(arr_r2))] 
         # bar color with the kish factor
         kish_dif = np.max(mtx_kish) - np.min(mtx_kish) 
-        c_plR = [cmap((mtx_kish[i//len(arr_r), i%len(arr_r)]-np.min(mtx_kish))/kish_dif) for i in range(len(arr_r)*len(arr_r))]
+        c_plR = [cmap((mtx_kish[i//len(arr_r1), i%len(arr_r2)]-np.min(mtx_kish))/kish_dif) for i in range(len(arr_r1)*len(arr_r2))]
         norm_plR = mpl.colors.Normalize(vmin=np.min(mtx_kish), vmax=np.max(mtx_kish)) 
         sm_plR = plt.cm.ScalarMappable(cmap=cmap, norm=norm_plR)
         sm_plR.set_array([])
@@ -1336,12 +1313,9 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         x_plR_min, x_plR_max = axs[1].get_xlim()
         #axs[1].hlines(y=t_ratio, xmin=x_plR_min, xmax=x_plR_max, label="R \n(min value for positive gain)", color='green')
         plt.colorbar(sm_plR, ax=axs[1], ticks=np.linspace(np.min(mtx_kish), np.max(mtx_kish), 5))
-        #axs[1].text(-1.5, -0.7 , "Overwgt unwgt 1: \nOverwgt unwgt 2:", fontsize = 6)
-        #for i in range(len(arr_r)*len(arr_r)): 
-        #    axs[1].text(0+i, -0.7 , "{}% \n{}%".format(arr_r[i//len(arr_r)]*100,arr_r[i%len(arr_r)]*100), fontsize = 6)
-        #axs[1].set_xticklabels(["{}% \n{}%".format(arr_r[i//len(arr_r)]*100,arr_r[i%len(arr_r)]*100) for i in range(len(arr_r)*len(arr_r))])
+        axs[1].text(-0.5, -0.7 , "ow_s: \now_x:", fontsize = 6)
         axs[1].set_xticks(x_plR)
-        axs[1].set_xticklabels(["{}% \n{}%".format(arr_r[i//len(arr_r)]*100,arr_r[i%len(arr_r)]*100) for i in range(len(arr_r)*len(arr_r))])
+        axs[1].set_xticklabels(["{}% \n{}%".format(arr_r1[i//len(arr_r1)]*100,arr_r2[i%len(arr_r2)]*100) for i in range(len(arr_r1)*len(arr_r2))])
         axs[1].tick_params(axis='x', which='major', labelsize=6)
         axs[1].set_ylim([10**(-3), 10**4])
         axs[1].set_ylabel("Overwgt unwgt 1, 2")
@@ -1349,14 +1323,193 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         axs[1].set_ylabel("(t_MG/t_nn)_min")
         axs[1].legend(loc='best')
         pdf.savefig(fig)
+        plt.close(fig)
+
+
+        # unweighting of standard sample with fixed kish factor
+
+        def effective_gain_st(eff1, eff2, eff_st):       # effective gain factor where the standard method computes all the matrix elements
+            t_ratio = 0.002
+            res = 1 / (t_ratio*eff_st/(eff1*eff2) + eff_st/eff2)
+            return res
+        
+        mtx_eff_st, mtx_feff_st =  np.zeros((len(arr_r1), len(arr_r2))), np.zeros((len(arr_r1), len(arr_r2)))
+        rand_st = np.random.rand(len(s1))
+        computed_kish_st = np.full((len(arr_r1), len(arr_r2)), False)
+        for i_r1 in range(len(arr_r1)):               # double loop over all r1, r2 combinations 
+            for i_r2 in range(len(arr_r2)):
+                if (mtx_kish[i_r1, i_r2]<1):             # if kish_su<1, we require r2_st such that kish_st=kish_su
+                    kish_st = 0 
+                    r = (1 - mtx_kish[i_r1, i_r2]**2) / 4      # rough ad-hoc formula
+                    for j in range(50): 
+                        n_kept = 0                             # number of kept events
+                        w_st_max = my_max(wgt_val, r_ow=r)
+                        w2_st = np.empty(len(wgt_val))
+                        z2_st = np.empty(len(wgt_val))
+                        for i in range(len(wgt_val)):                 # second unweighting
+                            if (wgt_val[i]>(rand_st[i]*w_st_max)):
+                                w2_st[n_kept] = wgt_val[i]
+                                wgt_z = np.maximum(1, wgt_val[i]/w_st_max)
+                                z2_st[n_kept] = wgt_z
+                                n_kept += 1
+                        w2_st = w2_st[0:n_kept]
+                        z2_st = z2_st[0:n_kept]
+                        kish_st = f_kish(z2_st)
+                        if (np.abs(mtx_kish[i_r1, i_r2]-kish_st)/mtx_kish[i_r1, i_r2] <= 0.01):
+                            computed_kish_st[i_r1, i_r2] = True
+                            break
+                        else:                            # if kish_st!=kish_su we modify r and perform again the second unweighting
+                            r = np.abs( r + (kish_st - mtx_kish[i_r1, i_r2])/8) 
+                else:                                    # if kish_su=1 we use the r2_st=r2_su
+                    n_kept = 0                             # number of kept events
+                    w_st_max = my_max(wgt_val, r_ow=0)
+                    w2_st = np.empty(len(wgt_val))
+                    z2_st = np.empty(len(wgt_val))
+                    for i in range(len(wgt_val)):                 # second unweighting
+                        if (wgt_val[i]>(rand_st[i]*w_st_max)):
+                            w2_st[n_kept] = wgt_val[i]
+                            wgt_z = np.maximum(1, wgt_val[i]/w_st_max)
+                            z2_st[n_kept] = wgt_z
+                            n_kept += 1
+                    w2_st = w2_st[0:n_kept]
+                    z2_st = z2_st[0:n_kept]
+                    computed_kish_st[i_r1, i_r2] = True
+                if(computed_kish_st[i_r1, i_r2]==True):
+                    mtx_eff_st[i_r1, i_r2] = efficiency(wgt_val, w_st_max)
+                    mtx_feff_st[i_r1, i_r2] = effective_gain_st(arr_eff1[i_r1], mtx_eff2[i_r1, i_r2], mtx_eff_st[i_r1, i_r2])
+                else:
+                    mtx_eff_st[i_r1, i_r2] = 0
+                    mtx_feff_st[i_r1, i_r2] = 0
+
+        fig_st, axs_st = plt.subplots(2, figsize=(8.27, 11.69))
+        for i in range(len(arr_r1)):                      # y labels of the f_eff colormap
+            if (unwgt=="new"):
+                axs_st[0].text(-0.5, 0.3+i, "ow_s: {}%".format(arr_r1[i]*100), fontsize = 8)
+            if (unwgt=="pap"):
+                axs_st[0].text(-0.5, 0.3+i, "ow_s: {}%".format(arr_r1[i]*100), fontsize = 8)
+        for i in range(len(arr_r2)):                      # x labels of the f_eff colormap
+            axs_st[0].text(0.3+i, -0.3, "ow_x: {}%".format(arr_r2[i]*100), fontsize = 8)
+        #axs[0].axis('off')
+        axs_st[0].set_title(label="effective gain factor with fixed Kish factor")
+        axs_st[0].set_yticklabels([])
+        axs_st[0].set_xticklabels([])
+        h1 = axs_st[0].pcolormesh(mtx_feff_st, cmap=cmap)
+        ticks_feff = np.linspace(np.min(mtx_feff_st), np.max(mtx_feff_st), 10, endpoint=True)
+        plt.colorbar(h1, ax=axs_st[0], ticks=ticks_feff)
+
+        axs_st[1].set(xlabel="ow_x", ylabel="MG efficiency with fixed kished factor")
+        for i in range(len(arr_r2)):                      # plot the curve of the efficiencies in function of the x_max with fixed s_max
+            axs_st[1].plot(np.linspace(1, len(arr_r2), len(arr_r2)), mtx_eff_st[i], marker='.', markersize=15, color=colors[i], label="s_max {}%".format(arr_r1[i]*100))
+            axs_st[1].text(0.3+i, -0.3, "ow_x: {}%".format(arr_r2[i]*100), fontsize = 8)
+        axs_st[1].set_xticklabels([])
+        axs_st[1].legend(loc='best')
+
+        pdf.savefig(fig_st)
+        plt.close(fig_st)
 
 
         # plot zk
         pdf.savefig(fig_zk1)
+        plt.close(fig_zk1)
         pdf.savefig(fig_zk2)
+        plt.close(fig_zk2)
         pdf.savefig(fig_zk3)
+        plt.close(fig_zk3)
         pdf.savefig(fig_zk4)
+        plt.close(fig_zk4)
 
 
     print("\n--------------------------------------------------")
     print(plot_legend)
+
+
+    
+    """
+    # plot data types accuracy
+    fig, axs = plt.subplots(3, figsize=(8.27, 11.69))
+    axs[0].set_yscale('log')
+    axs[0].set_ylim([10**(-31), 10**(-1)])
+    axs[0].set(xlabel="{}".format(input_name[0]), ylabel="dN/d({})".format(input_name[0]))
+    axs[0].hist(x=X_train[:, 0], bins=bins_tr1, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[0]), color='purple', histtype='step', lw=2, alpha=0.7)
+    axs[0].hist(x=X_val[:, 0], bins=bins_tr1, weights=wgt_val, label="{}_val".format(input_name[0]), color='teal', histtype='step', lw=2, alpha=0.7)
+    axs[0].hist(x=X_val[:, 0], bins=bins_tr1, weights=s1, label="{}_pred".format(input_name[0]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+    axs[0].legend(loc='best')
+
+    s1_1 = np.double(s1)
+    wgt_val_1 = np.double(wgt_val)
+    wgt_train_1 = np.double(wgt_train)
+    axs[1].set_yscale('log')
+    axs[1].set_ylim([10**(-31), 10**(-1)])
+    axs[1].set(xlabel="{}".format(input_name[0]), ylabel="dN/d({})".format(input_name[0]))
+    axs[1].hist(x=X_train[:, 0], bins=bins_tr1, weights=wgt_train_1/ratio_train_val, label="{}_train np double".format(input_name[0]), color='purple', histtype='step', lw=2, alpha=0.7)
+    axs[1].hist(x=X_val[:, 0], bins=bins_tr1, weights=wgt_val_1, label="{}_val np double".format(input_name[0]), color='teal', histtype='step', lw=2, alpha=0.7)
+    axs[1].hist(x=X_val[:, 0], bins=bins_tr1, weights=s1_1, label="{}_pred np double".format(input_name[0]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+    axs[1].legend(loc='best')
+
+    s1_2 = np.longdouble(s1)
+    wgt_val_2 = np.longdouble(wgt_val)
+    wgt_train_2 = np.longdouble(wgt_train)
+    axs[2].set_yscale('log')
+    axs[2].set_ylim([10**(-31), 10**(-1)])
+    axs[2].set(xlabel="{}".format(input_name[0]), ylabel="dN/d({})".format(input_name[0]))
+    axs[2].hist(x=X_train[:, 0], bins=bins_tr1, weights=wgt_train_2/ratio_train_val, label="{}_train np longdouble".format(input_name[0]), color='purple', histtype='step', lw=2, alpha=0.7)
+    axs[2].hist(x=X_val[:, 0], bins=bins_tr1, weights=wgt_val_2, label="{}_val np longdouble".format(input_name[0]), color='teal', histtype='step', lw=2, alpha=0.7)
+    axs[2].hist(x=X_val[:, 0], bins=bins_tr1, weights=s1_2, label="{}_pred np longdouble".format(input_name[0]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+    axs[2].legend(loc='best')
+
+    fig.savefig("/home/lb_linux/nn_unwgt/G128/plot_EoverE.pdf", format='pdf')
+    plt.close(fig)
+    """
+
+
+
+    """
+    # unweighting of the standard sample with only the second unweighting to achieve the same kish factor of the surrogate method for a better comparison
+    mtx_eff_st, mtx_feff_st =  np.zeros((len(arr_r), len(arr_r))), np.zeros((len(arr_r), len(arr_r)))
+    s_st2 = s1                                       # no first unweighting
+    w_st2 = wgt_val 
+    x_st2 = w_st2 / np.abs(s_st2)
+    rand_st = np.random.rand(len(s_st2))
+    for i_r1 in range(len(arr_r)):
+        for i_r2 in range(len(arr_r)):
+            if (mtx_kish[i_r1, i_r2]<1):             # if kish_su<1, we require r2_st such that kish_st=kish_su
+                kish_st = 0 
+                r = (1 - mtx_kish[i_r1, i_r2]) * 2   # 
+                for j in range(20): 
+                    x_max = my_max(s_st2, x_st2)
+                    s_st3 = np.empty(0)
+                    z_st3 = np.empty(0)
+                    x_st3 = np.empty(0)
+                    for i in range(len(s_st2)):                 # second unweighting
+                        if ((x_st2[i]/x_max)>rand_st[i] and (x_st2[i]/x_max)<10):
+                            s_st3 = np.append(s_st3, s_st2[i])
+                            wgt_z = np.sign(s_st2[i])*np.maximum(1, x_st2[i]/x_max)
+                            z_st3 = np.append(z_st3, wgt_z)
+                            x_st3 = np.append(x_st3, x_st2[i])
+                            kish_st = f_kish(z_st3)
+                    if (np.abs(mtx_kish[i_r1, i_r2]-kish_st)/mtx_kish[i_r1, i_r2] <= 0.01):
+                        break
+                    else:                            # if kish_st!=kish_su we modify r and perform again the second unweighting
+                        r += (kish_st - mtx_kish[i_r1, i_r2])
+            else:                                    # if kish_su=1 we use the r2_st=r2_su
+                r = arr_r[i_r2]
+                x_max = my_max(s_st2, x_st2)
+                s_st3 = np.empty(0)
+                z_st3 = np.empty(0)
+                x_st3 = np.empty(0)
+                for i in range(len(s_st2)):                 # second unweighting
+                    if ((x_st2[i]/x_max) > rand_st[i]):
+                        s_st3 = np.append(s_st3, s_st2[i])
+                        wgt_z = np.sign(s_st2[i])*np.maximum(1, x_st2[i]/x_max)
+                        z_st3 = np.append(z_st3, wgt_z)
+                        x_st3 = np.append(x_st3, x_st2[i])
+            mtx_eff_st[i_r1, i_r2] = efficiency(z_st3, x_st2, x_max)
+            mtx_feff_st[i_r1, i_r2] = effective_gain_st(arr_eff1[i_r1], mtx_eff2[i_r1, i_r2], mtx_eff_st[i_r1, i_r2])
+        if (unwgt=="new"):
+            axs_eff[3].plot(mtx_kish[i_r1], mtx_feff_st[i_r1], marker='.', color=colors[i_r1], label="s_max = {:.2e}".format(arr_smax[i_r1])) 
+        if (unwgt=="pap"):
+            axs_eff[3].plot(mtx_kish[i_r1], mtx_feff_st[i_r1], marker='.', color=colors[i_r1], label="w_max = {:.2e}".format(arr_wmax[i_r1])) 
+    axs_eff[3].set(xlabel="Kish factor", ylabel="f_eff_st")
+    axs_eff[3].legend
+    axs_eff[3].legend(loc='best')
+    """
