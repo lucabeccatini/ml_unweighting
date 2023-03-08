@@ -11,14 +11,21 @@ norm_sc = MinMaxScaler()
 stan_sc = StandardScaler()
 
 
-dataset = "7iter"            # 7iter, 10to6, 8t10to6
-channel = "G128"               # G128 , G304 
-load_module = False
-cluster = False
+#where = "cluster"            # cluster or local
+dataset = "8t10to6"            # 7iter, 10to6, 8t10to6
+load_module = True
+n_epochs = 1000 
+where = "local"            # cluster or local
+#dataset = "7iter"            # 7iter, 10to6, 8t10to6
+#load_module = False
+#n_epochs = 5 
 
-if (cluster==True):
+channel = "G128"               # G128 , G304 
+ratio_train_val = 3                              # number of training events over number of validation events
+
+if (where=="cluster"):
     path_scratch = "/globalscratch/ucl/cp3/lbeccati"
-if (cluster==False):
+if (where=="local"):
     path_scratch = "/home/lb_linux/nn_unwgt/{}".format(channel)
 
 
@@ -49,15 +56,13 @@ with open("{}/info_wgt_events_{}_{}.txt".format(path_scratch, channel, dataset),
 val_len = len(data)//4
 train_len = (len(data)//(4)) * 3 + len(data)%(4)
 
-time_read = time.time() - time_0 
-
-
 
 ##################################################
 # settings
 ##################################################
 
-tests = [211111, 211211, 211311, 211411] 
+tests = [211411] 
+#tests = [213623] 
 
 for test in tests:
     # test = ABCDEFG
@@ -102,11 +107,13 @@ for test in tests:
         unwgt = "new"
     if ((test%100)//10==2):
         unwgt = "pap"
-    # F (max function)
+    # F (output activation function)
     if (test%10==1):
-        maxfunc = "mqr"
+        output_activation = "lin"
     if (test%10==2):
-        maxfunc = "mmr"
+        output_activation = "lre"
+    if (test%10==3):
+        output_activation = "rel"
 
 
     if (output=="wno" or output=="lno"):
@@ -115,19 +122,27 @@ for test in tests:
         delta_hub = 3
 
     seed_all = 2 
+    maxfunc = "mqr"                    # mqr or mmr
 
-    n_epochs = 500 
-    learn_rate = 0.001
-    ratio_train_val = 3                              # number of training events over number of validation events
+    
+    if (unwgt=="new"):
+        batch_size = 1000
+        learn_rate = 0.0001
+    if (unwgt=="pap"):
+        batch_size = 1000
+        learn_rate = 0.001
 
     if (channel=="G128"):
         eff1_st = 0.6832                                  # standard effeciencies for the first unwgt
         eff2_st = 0.0205                                  # standard effeciencies for the second unwgt
+        t_st = 0.00248                                    # average time to unwgt one event for MG
+        #t_ratio = 0.02                                   # t_surrogate / t_standard = 1/50, t: time to compute one event
     if (channel=="G304"):
         eff1_st = 0.6537                                  # standard effeciencies for the first unwgt
         eff2_st = 0.0455                                  # standard effeciencies for the second unwgt
+        t_st = 0.00387                                    # average time to unwgt one event for MG
     E_cm_pro = 13000                                 # energy of cm of protons
-    t_ratio = 0.002       # t_surrogate / t_standard = [1/20, 1/50, 1/100, 1/500], t: time to compute one event
+    t_nn = 0.00003
 
     part_name = ["e-", "e+", "g1", "g2", "d", "d~"]
 
@@ -145,13 +160,11 @@ for test in tests:
         eff = np.sum(np.minimum(np.abs(s_i), s_i_max)) / (len(s_i)*s_i_max)
         return eff 
 
-    def effective_gain(z_f, eff1, eff2):                           # effective gain factor
+    def effective_gain(z_f, eff1, eff2, t_su):                           # effective gain factor
         # eff gain given by the ratio between the total time T of the standard method and the surrogate one to obtain the same results
-        res = f_kish(z_f) / (t_ratio*(eff1_st*eff2_st)/(eff1*eff2) + (eff1_st*eff2_st/eff2))
+        res = f_kish(z_f) / ((t_su/t_st)*(eff1_st*eff2_st)/(eff1*eff2) + (eff1_st*eff2_st/eff2))
         return res
 
-
-    time_1 = time.time()
 
     # input normalization
     def energy_cm(X):
@@ -166,6 +179,8 @@ for test in tests:
         res = 0.5 * np.log((X[:, 3]+X[:, 2]) / (X[:, 3]-X[:, 2]))        # y = 1/2 * ln((E+pz)/(E-pz))
         return res
 
+
+    #t_init_i = time.time()
 
     if (input=="cmsca"):
         E_cm_int = energy_cm(data[:, 0:8])
@@ -205,7 +220,8 @@ for test in tests:
         X_train, X_val = X_data[:train_len, :], X_data[-val_len:, :]
 
     if (input=="ptitf"):         # momentum transverse over E_int, phi, theta
-        input_name = ["E_int/E_pro", "beta", "p_T/E_int", "theta", "phi"]
+        input_name = [r"$\sqrt{\hat{S}}/\sqrt{S}$", r"$\beta$", r"$p_T/\sqrt{\hat{S}}$", r"$\theta$", r"$\phi$"]
+        #input_name = ["E_int/E_pro", "beta", r"$p_T/E_int", "theta", "phi"]
         E_cm_int = energy_cm(data[:, 0:8])
         beta_int = beta(data[:, 0:8])
         X_data = np.empty(shape=(len(data), 16))
@@ -254,7 +270,7 @@ for test in tests:
         X_train, X_val = X_data[:train_len, :], X_data[-val_len:, :]
 
     if (input=="p3pap"):
-        input_name = ["p_z(g_a)", "p_z(g_b)", "p_x", "p_y", "p_z"]
+        input_name = [r"$p_z(g_a)$", r"$p_z(g_b)$", r"$p_x$", r"$p_y$", r"$p_z$"]
         X_data = np.empty(shape=(len(data), 20))
         X_data[:, 0] = data[:, 2]
         X_data[:, 1] = data[:, 6]
@@ -264,37 +280,6 @@ for test in tests:
             X_data[:, i*3+4] = data[:, i*4+10]
         X_data = X_data/(E_cm_pro/2)
         X_train, X_val = X_data[:train_len, :], X_data[-val_len:, :]
-
-    """
-        Xt_no, Xv_no = np.empty(len(X_train)), np.empty(len(X_val))            # one array to normalize all same inputs toghether
-        for j in range(2):                 # to normalize E_int/E_pro and beta_cm
-            Xt_no[:] = X_train[:, j]
-            Xv_no[:] = X_val[:, j]
-            Xt_no = np.reshape(Xt_no, (len(Xt_no), 1))
-            Xv_no = np.reshape(Xv_no, (len(Xv_no), 1))
-            norm_sc.fit(Xt_no)                                  # find min max of X_train
-            Xt_no = norm_sc.transform(Xt_no)                    # scale X_train between 0,1
-            Xv_no = norm_sc.transform(Xv_no) 
-            Xt_no = np.reshape(Xt_no, len(Xt_no))
-            Xv_no = np.reshape(Xv_no, len(Xv_no))
-            X_train[:, j] = Xt_no[:]
-            X_val[:, j] = Xv_no[:]
-        Xt_no, Xv_no = np.empty(len(X_train)*5), np.empty(len(X_val)*5)            # one array to normalize all momenta toghether
-        for j in range(3):                 # to normalize with J=0: p; j=1: theta; j=2: phi
-            for i in range(5):
-                Xt_no[i*train_len:(i+1)*train_len] = X_train[:, 2+j+i*3]
-                Xv_no[i*val_len:(i+1)*val_len] = X_val[:, 2+j+i*3]
-            Xt_no = np.reshape(Xt_no, (len(Xt_no), 1))
-            Xv_no = np.reshape(Xv_no, (len(Xv_no), 1))
-            norm_sc.fit(Xt_no)                                  # find min max of X_train
-            Xt_no = norm_sc.transform(Xt_no)                    # scale X_train between 0,1
-            Xv_no = norm_sc.transform(Xv_no) 
-            Xt_no = np.reshape(Xt_no, len(Xt_no))
-            Xv_no = np.reshape(Xv_no, len(Xv_no))
-            for i in range(5):
-                X_train[:, 2+j+i*3] = Xt_no[i*train_len:(i+1)*train_len]
-                X_val[:, 2+j+i*3] = Xv_no[i*val_len:(i+1)*val_len]
-    """
 
 
     # output inizialization
@@ -341,20 +326,20 @@ for test in tests:
         wgt_val_pred = stan_sc.transform(wgt_val_pred)
     
     if (output=="lno"):                    # predict the absolute value of the logarithm of the wgt normalized
-        wgt_train_pred = np.abs(np.log(wgt_train))
+        wgt_train_pred = np.log(np.abs(wgt_train))
         wgt_train_pred = np.reshape(wgt_train_pred, (len(wgt_train_pred), 1))
         norm_sc.fit(wgt_train_pred)
         wgt_train_pred = norm_sc.transform(wgt_train_pred)
-        wgt_val_pred = np.abs(np.log(wgt_val))
+        wgt_val_pred = np.log(np.abs(wgt_val))
         wgt_val_pred = np.reshape(wgt_val_pred, (len(wgt_val_pred), 1))
         wgt_val_pred = norm_sc.transform(wgt_val_pred)
 
     if (output=="lst"):                    # predict the absolute value of the logarithm of the wgt standardized
-        wgt_train_pred = np.abs(np.log(wgt_train))
+        wgt_train_pred = np.log(np.abs(wgt_train))
         wgt_train_pred = np.reshape(wgt_train_pred, (len(wgt_train_pred), 1))
         stan_sc.fit(wgt_train_pred)
         wgt_train_pred = stan_sc.transform(wgt_train_pred)
-        wgt_val_pred = np.abs(np.log(wgt_val))
+        wgt_val_pred = np.log(np.abs(wgt_val))
         wgt_val_pred = np.reshape(wgt_val_pred, (len(wgt_val_pred), 1))
         wgt_val_pred = stan_sc.transform(wgt_val_pred)
 
@@ -362,11 +347,10 @@ for test in tests:
         wgt_train_pred, wgt_val_pred = wgt_train, wgt_val
 
     if (output=="lnw"):                    # predict the wgt
-        wgt_train_pred = np.abs(np.log(wgt_train)) 
-        wgt_val_pred =  np.abs(np.log(wgt_val))
-
-    time_2 = time.time()
-    time_init = time_2 - time_1
+        #wgt_train_pred = np.abs(np.log(wgt_train)) 
+        #wgt_val_pred =  np.abs(np.log(wgt_val))
+        wgt_train_pred = np.log(wgt_train) 
+        wgt_val_pred =  np.log(wgt_val)
 
 
 
@@ -376,14 +360,19 @@ for test in tests:
 
     # define the model
     tf.random.set_seed(seed_all) 
-    out_act_func = tf.keras.layers.LeakyReLU(alpha=0.1)
+    if (output_activation == "lin"):
+        out_act_func = tf.keras.activations.linear
+    if (output_activation == "lre"):
+        out_act_func = tf.keras.layers.LeakyReLU(alpha=0.1)
+    if (output_activation == "rel"):
+        out_act_func = tf.keras.layers.ReLU()
     if (layers=="4x64"):
         model = tf.keras.Sequential([
             tf.keras.layers.Dense(64, activation='relu', input_shape = (len(X_train[0]), )),
             tf.keras.layers.Dense(64, activation='relu'),
             tf.keras.layers.Dense(64, activation='relu'),
             tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dense(1, activation='relu')
+            tf.keras.layers.Dense(1, activation=out_act_func)
         ])
     if (layers=="4x128"):
         model = tf.keras.Sequential([
@@ -391,7 +380,7 @@ for test in tests:
             tf.keras.layers.Dense(128, activation='relu'),
             tf.keras.layers.Dense(128, activation='relu'),
             tf.keras.layers.Dense(128, activation='relu'),
-            tf.keras.layers.Dense(1, activation='relu')
+            tf.keras.layers.Dense(1, activation=out_act_func)
             ])
     if (layers=="8x64"):
         model = tf.keras.Sequential([
@@ -403,7 +392,7 @@ for test in tests:
             tf.keras.layers.Dense(64, activation='relu'),
             tf.keras.layers.Dense(64, activation='relu'),
             tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dense(1, activation='relu')
+            tf.keras.layers.Dense(1, activation=out_act_func)
             ])
 
     tf.keras.backend.set_floatx("float64")
@@ -415,11 +404,6 @@ for test in tests:
         chisq = (w_pred - w_true)**2 / tf.math.abs(w_true)
         return chisq
 
-    def mse_wgt(w_true, w_pred):
-        w_len, w_size = w_true.get_shape()
-        res = tf.multiply(tf.square(tf.subtract(w_true, w_pred)), tf.math.abs(w_true))/ w_len
-        return res
-
     if (lossfunc=="mse"):
         loss = 'mean_squared_error'
     if (lossfunc=="hub"):
@@ -428,12 +412,9 @@ for test in tests:
         loss = 'logcosh'
     if (lossfunc=="chi"):
         loss = chi_sqaure
-    if (lossfunc=="wms"):
-        loss = mse_wgt
-
 
     if (load_module==True):
-        model = tf.keras.models.load_model("{}/model_nn_unwgt_{}_{}r_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
+        model = tf.keras.models.load_model("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, output_activation, unwgt, seed_all, dataset))
 
     else:
         opt = tf.keras.optimizers.Adam(learning_rate=learn_rate)
@@ -441,12 +422,10 @@ for test in tests:
 
         # training
         callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=30)
-        history = model.fit(X_train, wgt_train_pred, validation_data=(X_val, wgt_val_pred), batch_size=1000, epochs=n_epochs, callbacks=[callback]) 
-
-        time_train = time.time() - time_2
+        history = model.fit(X_train, wgt_train_pred, validation_data=(X_val, wgt_val_pred), batch_size=batch_size, epochs=n_epochs, callbacks=[callback]) 
 
         # save model
-        model.save("{}/model_nn_unwgt_{}_{}r_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
+        model.save("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, output_activation, unwgt, seed_all, dataset))
 
 
     if (load_module==False):
@@ -456,7 +435,7 @@ for test in tests:
         axs_tr.set_yscale('log')
         axs_tr.set(xlabel="epochs", ylabel="loss")
         axs_tr.legend(loc=0)
-        fig_tr.savefig("{}/train_{}_{}r_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset))
+        fig_tr.savefig("{}/train_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, output_activation, unwgt, seed_all, dataset))
         plt.close(fig_tr)
 
 
@@ -521,7 +500,7 @@ for test in tests:
 
     if (maxfunc=="mqr"): 
         my_max = max_quantile_reduction
-        arr_r1 = [0.2, 0.1, 0.05, 0.01] 
+        arr_r1 = [0.1, 0.01, 0.001, 0.0001] 
         arr_r2 = [0.04, 0.03, 0.02, 0.01] 
 
     if (maxfunc=="mmr"):
@@ -554,8 +533,8 @@ for test in tests:
     bins_phi = np.linspace(-np.pi, np.pi, 50)
     bins_mee = np.linspace(0, 500, 50)
 
-    bins_ws = np.logspace(np.log10(10**(-10)), np.log10(10**8), 70)
-    bins_w = np.logspace(np.log10(10**(-10)), np.log10(10**(-4)), 50)
+    bins_ws = np.logspace(np.log10(10**(-6)), np.log10(10**6), 70)
+    bins_w = np.logspace(np.log10(10**(-15)), np.log10(10**(-1)), 70)
     if (output=="wno"):
         bins_w_pred = np.logspace(-15, 0, 50)
     if (output=="lno"):
@@ -565,33 +544,44 @@ for test in tests:
     if (output=="wgt"):
         bins_w_pred = bins_w
     if (output=="lnw"):
-        bins_w_pred = np.logspace(5, 80, 50)
+        bins_w_pred = np.linspace(5, 70, 50)
 
-    plot_legend = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: 1000 | Learn. rate: {} \nEv_train: {} | Ev_val: {}
+    plot_legend = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_val: {}
 Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
-        n_epochs, learn_rate, len(X_train), len(X_val), input, output, lossfunc, maxfunc, unwgt, seed_all)
+        n_epochs, batch_size , learn_rate, len(X_train), len(X_val), input, output, lossfunc, maxfunc, unwgt, seed_all)
     
     fig_ws, axs_ws = plt.subplots(2, figsize=(8.27, 11.69))
     fig_ws.legend(title = plot_legend)
 
-    fig_zk1, axs_zk1 = plt.subplots(4, figsize=(8.27, 11.69))
-    fig_zk1.legend(title = plot_legend)
-    fig_zk2, axs_zk2 = plt.subplots(4, figsize=(8.27, 11.69))
-    fig_zk2.legend(title = plot_legend)
-    fig_zk3, axs_zk3 = plt.subplots(4, figsize=(8.27, 11.69))
-    fig_zk3.legend(title = plot_legend)
-    fig_zk4, axs_zk4 = plt.subplots(4, figsize=(8.27, 11.69))
-    fig_zk4.legend(title = plot_legend)
+    fig_tab, axs_tab = plt.subplots(1, figsize=(8.27, 11.69))  
+    #col_lab = [r"$ow_s$" "\n" r"$ow_x$", r"$\varepsilon_1$" "\n" r"$\varepsilon_2$", r"$\alpha$", r"$f_{eff}$", "time init \ntime pred \ntime unwgt 1 \ntime unwgt 2", r"$\langle t_{nn}\rangle$"]
+    col_lab = [r"$ow_s$" "\n" r"$ow_x$", r"$\varepsilon_1$" "\n" r"$\varepsilon_2$", r"$\alpha$", r"$f_{eff}$"]
+    row_max = len(arr_r1)*len(arr_r2) + 1
+    count_table = 1
+    axs_tab.set_axis_off() 
+    data_table = [ ["" for i in range(len(col_lab))] for j in range(row_max)]
+    for i in range(len(col_lab)):
+        data_table[0][i] = col_lab[i]
+
+    fig_zk1, axs_zk1 = plt.subplots(4, figsize=(6, 11.69))
+    #fig_zk1.legend(title = plot_legend)
+    fig_zk2, axs_zk2 = plt.subplots(4, figsize=(6, 11.69))
+    #fig_zk2.legend(title = plot_legend)
+    fig_zk3, axs_zk3 = plt.subplots(4, figsize=(6, 11.69))
+    #fig_zk3.legend(title = plot_legend)
+    fig_zk4, axs_zk4 = plt.subplots(4, figsize=(6, 11.69))
+    #fig_zk4.legend(title = plot_legend)
 
 
 
     ##################################################
     # unweighting
     ##################################################
+    
 
     mtx_xmax, mtx_eff2, mtx_kish, mtx_feff = np.empty((len(arr_r1), len(arr_r2))), np.empty((len(arr_r1), len(arr_r2))), np.empty((len(arr_r1), len(arr_r2))), np.empty((len(arr_r1), len(arr_r2)))
 
-    time_3 = time.time()
+    #t_pred_i = time.time()
 
     s1_pred = model.predict(tf.convert_to_tensor(X_val))
     s1_pred = np.reshape(s1_pred, len(s1_pred))
@@ -599,12 +589,12 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
         s1 = np.reshape(s1_pred, (len(s1_pred), 1))
         s1 = norm_sc.inverse_transform(s1) 
         s1 = s1.reshape(len(s1))
-        s1 = np.e**(-s1) 
+        s1 = np.exp(s1) 
     if (output=="lst"):
         s1 = np.reshape(s1_pred, (len(s1_pred), 1))
         s1 = stan_sc.inverse_transform(s1) 
         s1 = s1.reshape(len(s1))
-        s1 = np.e**(-s1) 
+        s1 = np.exp(s1) 
     if (output=="wno"):
         s1 = np.reshape(s1_pred, (len(s1_pred), 1))
         s1 = norm_sc.inverse_transform(s1) 
@@ -616,15 +606,12 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
     if(output=="wgt"):
         s1 = s1_pred 
     if(output=="lnw"):
-        s1 = np.e**(-s1) 
+        #s1 = np.exp(-s1_pred) 
+        s1 = np.exp(s1_pred) 
     s1 = np.double(s1)
 
-
-    time_4 = time.time()
-    time_pred = time_4 - time_3
-
-    time_unwgt1 = 0
-    time_unwgt2 = 0
+    #t_pred_f = time.time()
+    #time_pred = t_pred_f - t_pred_i
 
 
     for i_r1 in range(len(arr_r1)):                   # loop to test different maxima conditions
@@ -632,14 +619,14 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
         np.random.seed(seed_all)                     # each test has the same seed
         r = arr_r1[i_r1]                              # parameter of the maxima function for the first unwgt
 
-        time_5 = time.time()
-
         # first unweighting
         rand1 = np.random.rand(len(s1))              # random numbers for the first unwgt
         w2 = np.empty(len(s1))                             # real wgt evaluated after first unwgt
         s2 = np.empty(len(s1))                             # predicted wgt kept by first unwgt
         z2 = np.empty(len(s1))                             # predicted wgt after first unwgt
         x2 = np.empty(len(s1))                             # ratio between real and predicted wgt of kept events
+
+        #t_unwgt1_i = time.time()
 
         if (unwgt=="new"):                           # new method for the unweighting
             s_max = my_max(s1, r_ow=r)
@@ -674,17 +661,14 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
             x2 = x2[0:j]
             arr_eff1[i_r1] = efficiency(s1, w_max)
 
-        time_6 = time.time()
-        time_unwgt1 += (time_6 - time_5)
+        #t_unwgt1_f = time.time()
+        #time_unwgt1 = t_unwgt1_f - t_unwgt1_i 
 
-        axs_ws[1].hist(x=x2*np.abs(z2), bins=bins_ws, label="r1={}%".format(arr_r1[i_r1]*100), color=colors[i_r1], histtype='step', lw=2, alpha=0.7)
 
         for i_r2 in range(len(arr_r2)):               # to test all combinations of s_max and x_max 
             # second unweighting
             rand2 = np.random.rand(len(x2))
             r = arr_r2[i_r2]                          # parameter of the maxima function for the second unwgt
-
-            time_7 = time.time()
 
             s3 = np.empty(len(s2))                         # predicted wgt kept by second unwgt
             z3 = np.empty(len(s2))                         # predicted wgt after second unwgt
@@ -694,6 +678,8 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
             z3_2ow = np.empty(len(s2))                     # final events with overwgt only in the second unwgt 
             z3_12ow = np.empty(len(s2))                    # final events with overwgt in both unwgt
             
+            #t_unwgt2_i = time.time()
+
             if (unwgt=="new"):
                 if (maxfunc=="mqr"):
                     # # # # #x_max = my_max(s2, r, x2*np.abs(z2))
@@ -726,56 +712,12 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
                 z3_1ow = z3_1ow[0:j1] 
                 z3_2ow = z3_2ow[0:j2] 
                 z3_12ow = z3_12ow[0:j12]
-                mtx_eff2[i_r1, i_r2] = efficiency(x2, x_max)
-                mtx_feff[i_r1, i_r2] = effective_gain(z3, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
-
-                time_8 = time.time()
-                time_unwgt2 += (time_8 - time_7)
-
-
-                # for zk plot only 
-                mtx_kish[i_r1, i_r2] = f_kish(z3)
-                if (len(z3)>=1):
-                    if (i_r1==0):
-                        axs_zk1[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.51, 10.51, 20), 
-                            color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
-                            label=["N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))])
-                        axs_zk1[i_r2].set_ylim([1, 10**5])
-                        axs_zk1[i_r2].set_yscale('log')
-                        axs_zk1[i_r2].legend(title="ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2]), loc='best')
-                        axs_zk1[i_r2].set(xlabel="z3", ylabel="dN/dz3")
-                    if (i_r1==1):
-                        axs_zk2[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.51, 10.51, 20), 
-                            color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k",  
-                            label=["N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))])
-                        axs_zk2[i_r2].set_ylim([1, 10**5])
-                        axs_zk2[i_r2].set_yscale('log')
-                        axs_zk2[i_r2].legend(title="ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2]), loc='best')
-                        axs_zk2[i_r2].set(xlabel="z3", ylabel="dN/dz3")
-                    if (i_r1==2):
-                        axs_zk3[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.51, 10.51, 20), 
-                            color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
-                            label=["N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))])
-                        axs_zk3[i_r2].set_ylim([1, 10**5])
-                        axs_zk3[i_r2].set_yscale('log')
-                        axs_zk3[i_r2].legend(title="ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2]), loc='best')
-                        axs_zk3[i_r2].set(xlabel="z3", ylabel="dN/dz3")
-                    if (i_r1==3):
-                        axs_zk4[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.51, 10.51, 20), 
-                            color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
-                            label=["N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))])
-                        axs_zk4[i_r2].set_ylim([1, 10**5])
-                        axs_zk4[i_r2].set_yscale('log')
-                        axs_zk4[i_r2].legend(title="ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2]), loc='best')
-                        axs_zk4[i_r2].set(xlabel="z3", ylabel="dN/dz3")
-
 
             if (unwgt=="pap"):
                 ztot = np.empty(len(s2))
-    
                 if (maxfunc=="mqr"):
                     # # # # #x_max = my_max(s2, x2)
-                    x_max = my_max(s2, x2, r_ow=r) 
+                    x_max = my_max(array_s=s2, array_x=x2, r_ow=r) 
                 if (maxfunc=="mmr"):
                     x_max = my_max(x2, r_ow=r) 
                 j, j0, j1, j2, j12 = 0, 0, 0, 0, 0
@@ -799,7 +741,7 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
                             j12 += 1
                         j += 1
                 s3 = s3[0:j] 
-                x3 = z3[0:j]
+                x3 = x3[0:j]
                 z3 = z3[0:j]
                 ztot = ztot[0:j] 
                 z3_0ow = z3_0ow[0:j0]
@@ -807,55 +749,76 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
                 z3_2ow = z3_2ow[0:j2] 
                 z3_12ow = z3_12ow[0:j12]
 
-                mtx_eff2[i_r1, i_r2] = efficiency(x2, x_max) 
-                mtx_feff[i_r1, i_r2] = effective_gain(ztot, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
+            #t_unwgt2_f = time.time()
+            #time_unwgt2 = t_unwgt2_f - t_unwgt2_i
 
-                time_8 = time.time()
-                time_unwgt2 += (time_8 - time_7)
-
-
-                # for zk plot only 
-                mtx_kish[i_r1, i_r2] = f_kish(ztot) 
-                if (len(z3)>=1):
-                    if (i_r1==0):
-                        axs_zk1[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.51, 10.51, 20), 
-                            color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
-                            label=["N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))])
-                        axs_zk1[i_r2].set_ylim([1, 10**5])
-                        axs_zk1[i_r2].set_yscale('log')
-                        axs_zk1[i_r2].legend(title="ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2]), loc='best')
-                        axs_zk1[i_r2].set(xlabel="z3", ylabel="dN/dz3")
-                    if (i_r1==1):
-                        axs_zk2[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.51, 10.51, 20), 
-                            color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
-                            label=["N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))])
-                        axs_zk2[i_r2].set_ylim([1, 10**5])
-                        axs_zk2[i_r2].set_yscale('log')
-                        axs_zk2[i_r2].legend(title="ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2]), loc='best')
-                        axs_zk2[i_r2].set(xlabel="z3", ylabel="dN/dz3")
-                    if (i_r1==2):
-                        axs_zk3[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.51, 10.51, 20), 
-                            color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
-                            label=["N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))])
-                        axs_zk3[i_r2].set_ylim([1, 10**5])
-                        axs_zk3[i_r2].set_yscale('log')
-                        axs_zk3[i_r2].legend(title="ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2]), loc='best')
-                        axs_zk3[i_r2].set(xlabel="z3", ylabel="dN/dz3")
-                    if (i_r1==3):
-                        axs_zk4[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.51, 10.51, 20), 
-                            color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
-                            label=["N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))])
-                        axs_zk4[i_r2].set_ylim([1, 10**5])
-                        axs_zk4[i_r2].set_yscale('log')
-                        axs_zk4[i_r2].legend(title="ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2]), loc='best')
-                        axs_zk4[i_r2].set(xlabel="z3", ylabel="dN/dz3")
+            #t_nn = (time_init + time_pred + time_unwgt1 + time_unwgt2)/len(wgt_val)
 
             mtx_xmax[i_r1, i_r2] = x_max
-            #axs_eff[1].annotate(arr_r2[i_r2], (x_max, mtx_eff2[i_r1, i_r2]))
+            mtx_eff2[i_r1, i_r2] = efficiency(x2, x_max)
+            if (unwgt=="new"):
+                mtx_kish[i_r1, i_r2] = f_kish(z3)
+                mtx_feff[i_r1, i_r2] = effective_gain(z3, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2], t_nn)
+            if (unwgt=="pap"):
+                mtx_kish[i_r1, i_r2] = f_kish(ztot) 
+                mtx_feff[i_r1, i_r2] = effective_gain(ztot, arr_eff1[i_r1], mtx_eff2[i_r1, i_r2], t_nn)
 
 
-    time_unwgt1 = time_unwgt1 / len(arr_r1)
-    time_unwgt2 = time_unwgt1 / (len(arr_r2)**2)
+            # table
+            data_table[count_table][0] = "{}%\n{}%".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100)
+            data_table[count_table][1] = "{:.3f}\n{:.3f}".format(arr_eff1[i_r1], mtx_eff2[i_r1, i_r2])
+            data_table[count_table][2] = "{:.3f}".format(mtx_kish[i_r1, i_r2])
+            data_table[count_table][3] = "{:.3f}".format(mtx_feff[i_r1, i_r2])
+            #data_table[count_table][4] = "{:.4f}\n{:.4f}\n{:.4f}\n{:.4f}".format(time_init, time_pred, time_unwgt1, time_unwgt2)
+            #data_table[count_table][5] = "{:.6f}".format(t_nn)
+            count_table += 1
+
+
+            # plot zk overweight
+            if (len(z3)>=1):
+                if (i_r1==0):
+                    axs_zk1[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.501, 10.501, 20), 
+                        color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
+                        label=[r"$N_0^{ow}: $"+"{}".format(len(z3_0ow)), r"$N_1^{ow}: $"+"{}".format(len(z3_1ow)), r"$N_2^{ow}: $"+"{}".format(len(z3_2ow)), r"$N_{12}^{ow}: $"+"{}".format(len(z3_12ow))])
+                    axs_zk1[i_r2].set_ylim([1, 10**5])
+                    axs_zk1[i_r2].set_yscale('log')
+                    axs_zk1[i_r2].legend(title=r"$ow_s: $"+"{}%\n".format(arr_r1[i_r1]*100)+r"$ow_x: $"+"{}%\n".format(arr_r2[i_r2]*100)+r"$\alpha: $"+"{:.3f}".format(mtx_kish[i_r1, i_r2]), loc='best')
+                    axs_zk1[i_r2].set(xlabel=r"$\tilde{w}$", ylabel=r"$\frac{dN}{d(\tilde{w})}$")
+                    axs_zk1[i_r2].set_xticks(np.linspace(1, 10, 10))
+
+                if (i_r1==1):
+                    axs_zk2[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.501, 10.501, 20), 
+                        color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k",  
+                        label=[r"$N_0^{ow}: $"+"{}".format(len(z3_0ow)), r"$N_1^{ow}: $"+"{}".format(len(z3_1ow)), r"$N_2^{ow}: $"+"{}".format(len(z3_2ow)), r"$N_{12}^{ow}: $"+"{}".format(len(z3_12ow))])
+                    axs_zk2[i_r2].set_ylim([1, 10**5])
+                    axs_zk2[i_r2].set_yscale('log')
+                    axs_zk2[i_r2].legend(title=r"$ow_s: $"+"{}%\n".format(arr_r1[i_r1]*100)+r"$ow_x: $"+"{}%\n".format(arr_r2[i_r2]*100)+r"$\alpha: $"+"{:.3f}".format(mtx_kish[i_r1, i_r2]), loc='best')
+                    axs_zk2[i_r2].set(xlabel=r"$\tilde{w}$", ylabel=r"$\frac{dN}{d(\tilde{w})}$")
+                    axs_zk2[i_r2].set_xticks(np.linspace(1, 10, 10))
+                if (i_r1==2):
+                    axs_zk3[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.501, 10.501, 20), 
+                        color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
+                        label=[r"$N_0^{ow}: $"+"{}".format(len(z3_0ow)), r"$N_1^{ow}: $"+"{}".format(len(z3_1ow)), r"$N_2^{ow}: $"+"{}".format(len(z3_2ow)), r"$N_{12}^{ow}: $"+"{}".format(len(z3_12ow))])
+                    axs_zk3[i_r2].set_ylim([1, 10**5])
+                    axs_zk3[i_r2].set_yscale('log')
+                    axs_zk3[i_r2].legend(title=r"$ow_s: $"+"{}%\n".format(arr_r1[i_r1]*100)+r"$ow_x: $"+"{}%\n".format(arr_r2[i_r2]*100)+r"$\alpha: $"+"{:.3f}".format(mtx_kish[i_r1, i_r2]), loc='best')
+                    axs_zk3[i_r2].set(xlabel=r"$\tilde{w}$", ylabel=r"$\frac{dN}{d(\tilde{w})}$")
+                    axs_zk3[i_r2].set_xticks(np.linspace(1, 10, 10))
+                if (i_r1==3):
+                    axs_zk4[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.501, 10.501, 20), 
+                        color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
+                        label=[r"$N_0^{ow}: $"+"{}".format(len(z3_0ow)), r"$N_1^{ow}: $"+"{}".format(len(z3_1ow)), r"$N_2^{ow}: $"+"{}".format(len(z3_2ow)), r"$N_{12}^{ow}: $"+"{}".format(len(z3_12ow))])
+                    axs_zk4[i_r2].set_ylim([1, 10**5])
+                    axs_zk4[i_r2].set_yscale('log')
+                    axs_zk4[i_r2].legend(title=r"$ow_s: $"+"{}%\n".format(arr_r1[i_r1]*100)+r"$ow_x: $"+"{}%\n".format(arr_r2[i_r2]*100)+r"$\alpha: $"+"{:.3f}".format(mtx_kish[i_r1, i_r2]), loc='best')
+                    axs_zk4[i_r2].set(xlabel=r"$\tilde{w}$", ylabel=r"$\frac{dN}{d(\tilde{w})}$")
+                    axs_zk4[i_r2].set_xticks(np.linspace(1, 10, 10))
+                    # "N_0ow: {}".format(len(z3_0ow)), "N_1ow: {}".format(len(z3_1ow)), "N_2ow: {}".format(len(z3_2ow)), "N_12ow: {}".format(len(z3_12ow))
+                    # "ow_s: {}% \now_x: {}% \nf_kish: {:.3f}".format(arr_r1[i_r1]*100, arr_r2[i_r2]*100, mtx_kish[i_r1, i_r2])
+        # plot zw/s
+        axs_ws[1].hist(x=x2*np.abs(z2), bins=bins_ws, label=r"$ow_s: $"+"{}%".format(arr_r1[i_r1]*100), color=colors[i_r1], histtype='step', lw=2, alpha=0.7)
+        axs_ws[1].axvline(x=mtx_xmax[i_r1, 1], color=colors[i_r1], ls='dotted', lw=2, alpha=0.7)
+
 
 
 
@@ -890,61 +853,61 @@ Input norm: {} | Output norm: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | 
         m_ee_val = m_ee_val * E_cm_pro / 2
 
     #with PdfPages("/home/lb_linux/nn_unwgt/plot_.pdf") as pdf: 
-    with PdfPages("{}/plot_{}_{}r_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, unwgt, seed_all, dataset)) as pdf: 
+    with PdfPages("{}/plot_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}_{}.pdf".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, output_activation, unwgt, seed_all, dataset, where)) as pdf: 
         # plot train and input distribution
-            
+        
         if (input=="ptitf" or input=="ptptf"):
             for i_pag in range(6):
 
                 fig, axs = plt.subplots(3, figsize=(8.27, 11.69)) 
 
-                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: 1000 | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
+                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
 Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
-                n_epochs, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
+                n_epochs, batch_size, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
             
                 if (i_pag==0):
                     axs[0].set(xlabel="{}".format(input_name[0]), ylabel="dN/d({})".format(input_name[0]))
-                    axs[0].hist(x=X_train[:, 0], bins=bins_tr1, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[0]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[0].hist(x=X_val[:, 0], bins=bins_tr1, weights=wgt_val, label="{}_val".format(input_name[0]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[0].hist(x=X_val[:, 0], bins=bins_tr1, weights=s1, label="{}_pred".format(input_name[0]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_train[:, 0], bins=bins_tr1, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[0]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_val[:, 0], bins=bins_tr1, weights=wgt_val, label="{} val".format(input_name[0]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_val[:, 0], bins=bins_tr1, weights=s1, label="{} pred".format(input_name[0]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}".format(input_name[1]), ylabel="dN/d({})".format(input_name[1]))
-                    axs[1].hist(x=X_train[:, 1], bins=bins_beta, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[1]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=wgt_val, label="{}_val".format(input_name[1]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=s1, label="{}_pred".format(input_name[1]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_train[:, 1], bins=bins_beta, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[1]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=wgt_val, label="{} val".format(input_name[1]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=s1, label="{} pred".format(input_name[1]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
-                    axs[2].set(xlabel="m_e-e+ [GeV]", ylabel="dN/d(m_e-e+)")
-                    axs[2].hist(x=m_ee_train, bins=bins_mee, weights=wgt_train/ratio_train_val, label="m_e-e+_train", color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[2].hist(x=m_ee_val, bins=bins_mee, weights=wgt_val, label="m_e-e+_val", color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[2].hist(x=m_ee_val, bins=bins_mee, weights=s1, label="m_e-e+_pred", color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[2].set(xlabel=r"$m_{e^-e^+}$", ylabel=r"$dN/d(m_{e^-e^+})$")
+                    axs[2].hist(x=m_ee_train, bins=bins_mee, weights=wgt_train/ratio_train_val, label=r"$m_{e^-e^+} train$", color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[2].hist(x=m_ee_val, bins=bins_mee, weights=wgt_val, label=r"$m_{e^-e^+} val$", color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[2].hist(x=m_ee_val, bins=bins_mee, weights=s1, label=r"$m_{e^-e^+} pred$", color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[2].axvline(x=91.2, color='black', ls='--', lw=0.5)
                     axs[2].set_yscale('log')
                     axs[2].legend(loc='best')
 
                 if (i_pag>0):
                     axs[0].set(xlabel="{}({})".format(input_name[2], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[2]))
-                    axs[0].hist(x=X_train[:, i_pag*3-1], bins=bins_tr1, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[2]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[0].hist(x=X_val[:, i_pag*3-1], bins=bins_tr1, weights=wgt_val, label="{}_val".format(input_name[2]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[0].hist(x=X_val[:, i_pag*3-1], bins=bins_tr1, weights=s1, label="{}_pred".format(input_name[2]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_train[:, i_pag*3-1], bins=bins_tr1, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[2]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_val[:, i_pag*3-1], bins=bins_tr1, weights=wgt_val, label="{} val".format(input_name[2]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_val[:, i_pag*3-1], bins=bins_tr1, weights=s1, label="{} pred".format(input_name[2]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}({})".format(input_name[3], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[3]))
-                    axs[1].hist(x=X_train[:, i_pag*3], bins=bins_theta, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[3]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[1].hist(x=X_val[:, i_pag*3], bins=bins_theta, weights=wgt_val, label="{}_val".format(input_name[3]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[1].hist(x=X_val[:, i_pag*3], bins=bins_theta, weights=s1, label="{}_pred".format(input_name[3]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_train[:, i_pag*3], bins=bins_theta, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[3]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_val[:, i_pag*3], bins=bins_theta, weights=wgt_val, label="{} val".format(input_name[3]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_val[:, i_pag*3], bins=bins_theta, weights=s1, label="{} pred".format(input_name[3]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
                     if (i_pag<5):
                         axs[2].set(xlabel="{}({})".format(input_name[4], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[4]))
-                        axs[2].hist(x=X_train[:, i_pag*3+1], bins=bins_phi, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[4]), color='purple', histtype='step', lw=2, alpha=0.7)
-                        axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_phi, weights=wgt_val, label="{}_val".format(input_name[4]), color='teal', histtype='step', lw=2, alpha=0.7)
-                        axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_phi, weights=s1, label="{}_pred".format(input_name[4]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                        axs[2].hist(x=X_train[:, i_pag*3+1], bins=bins_phi, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[4]), color='purple', histtype='step', lw=2, alpha=0.7)
+                        axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_phi, weights=wgt_val, label="{} val".format(input_name[4]), color='teal', histtype='step', lw=2, alpha=0.7)
+                        axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_phi, weights=s1, label="{} pred".format(input_name[4]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                         axs[2].set_yscale('log')
                         axs[2].legend(loc='best')
                     else:
@@ -957,51 +920,51 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
             for i_pag in range(7):
                 fig, axs = plt.subplots(3, figsize=(8.27, 11.69)) 
 
-                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: 1000 | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
+                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
 Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
-                n_epochs, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
+                n_epochs, batch_size, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
                 if (i_pag==0):
                     axs[0].set(xlabel="{}".format(input_name[0]), ylabel="dN/d({})".format(input_name[0]))
-                    axs[0].hist(x=X_train[:, 0], bins=bins_beta, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[0]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[0].hist(x=X_val[:, 0], bins=bins_beta, weights=wgt_val, label="{}_val".format(input_name[0]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[0].hist(x=X_val[:, 0], bins=bins_beta, weights=s1, label="{}_pred".format(input_name[0]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_train[:, 0], bins=bins_beta, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[0]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_val[:, 0], bins=bins_beta, weights=wgt_val, label="{} val".format(input_name[0]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_val[:, 0], bins=bins_beta, weights=s1, label="{} pred".format(input_name[0]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}".format(input_name[1]), ylabel="dN/d({})".format(input_name[1]))
-                    axs[1].hist(x=X_train[:, 1], bins=bins_beta, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[1]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=wgt_val, label="{}_val".format(input_name[1]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=s1, label="{}_pred".format(input_name[1]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_train[:, 1], bins=bins_beta, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[1]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=wgt_val, label="{} val".format(input_name[1]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_val[:, 1], bins=bins_beta, weights=s1, label="{} pred".format(input_name[1]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
-                    axs[2].set(xlabel="m_e-e+ [GeV]", ylabel="dN/d(m_e-e+)")
-                    axs[2].hist(x=m_ee_train, bins=bins_mee, weights=wgt_train/ratio_train_val, label="m_e-e+_train", color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[2].hist(x=m_ee_val, bins=bins_mee, weights=wgt_val, label="m_e-e+_val", color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[2].hist(x=m_ee_val, bins=bins_mee, weights=s1, label="m_e-e+_pred", color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[2].set(xlabel=r"$m_{e^-e^+}$", ylabel=r"$dN/d(m_{e^-e^+})$")
+                    axs[2].hist(x=m_ee_train, bins=bins_mee, weights=wgt_train/ratio_train_val, label=r"$m_{e^-e^+} train$", color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[2].hist(x=m_ee_val, bins=bins_mee, weights=wgt_val, label=r"$m_{e^-e^+} val$", color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[2].hist(x=m_ee_val, bins=bins_mee, weights=s1, label=r"$m_{e^-e^+} pred$", color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[2].axvline(x=91.2, color='black', ls='--', lw=0.5)
                     axs[2].set_yscale('log')
                     axs[2].legend(loc='best')
 
                 if (i_pag>0):
                     axs[0].set(xlabel="{}({})".format(input_name[2], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[2]))
-                    axs[0].hist(x=X_train[:, i_pag*3-1], bins=bins_tr2, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[2]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[0].hist(x=X_val[:, i_pag*3-1], bins=bins_tr2, weights=wgt_val, label="{}_val".format(input_name[2]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[0].hist(x=X_val[:, i_pag*3-1], bins=bins_tr2, weights=s1, label="{}_pred".format(input_name[2]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_train[:, i_pag*3-1], bins=bins_tr2, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[2]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_val[:, i_pag*3-1], bins=bins_tr2, weights=wgt_val, label="{} val".format(input_name[2]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[0].hist(x=X_val[:, i_pag*3-1], bins=bins_tr2, weights=s1, label="{} pred".format(input_name[2]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
                     axs[1].set(xlabel="{}({})".format(input_name[3], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[3]))
-                    axs[1].hist(x=X_train[:, i_pag*3], bins=bins_tr2, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[3]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[1].hist(x=X_val[:, i_pag*3], bins=bins_tr2, weights=wgt_val, label="{}_val".format(input_name[3]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[1].hist(x=X_val[:, i_pag*3], bins=bins_tr2, weights=s1, label="{}_pred".format(input_name[3]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_train[:, i_pag*3], bins=bins_tr2, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[3]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_val[:, i_pag*3], bins=bins_tr2, weights=wgt_val, label="{} val".format(input_name[3]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[1].hist(x=X_val[:, i_pag*3], bins=bins_tr2, weights=s1, label="{} pred".format(input_name[3]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
                     axs[2].set(xlabel="{}({})".format(input_name[4], part_name[i_pag-1]), ylabel="dN/d({})".format(input_name[4]))
-                    axs[2].hist(x=X_train[:, i_pag*3+1], bins=bins_tr2, weights=wgt_train/ratio_train_val, label="{}_train".format(input_name[4]), color='purple', histtype='step', lw=2, alpha=0.7)
-                    axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_tr2, weights=wgt_val, label="{}_val".format(input_name[4]), color='teal', histtype='step', lw=2, alpha=0.7)
-                    axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_tr2, weights=s1, label="{}_pred".format(input_name[4]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
+                    axs[2].hist(x=X_train[:, i_pag*3+1], bins=bins_tr2, weights=wgt_train/ratio_train_val, label="{} train".format(input_name[4]), color='purple', histtype='step', lw=2, alpha=0.7)
+                    axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_tr2, weights=wgt_val, label="{} val".format(input_name[4]), color='teal', histtype='step', lw=2, alpha=0.7)
+                    axs[2].hist(x=X_val[:, i_pag*3+1], bins=bins_tr2, weights=s1, label="{} pred".format(input_name[4]), color='goldenrod', histtype='step', lw=2, alpha=0.7)
                     axs[2].set_yscale('log')
                     axs[2].legend(loc='best')
 
@@ -1015,9 +978,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
 
                 fig, axs = plt.subplots(3, figsize=(8.27, 11.69)) 
 
-                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: 1000 | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
+                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
     Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
-                n_epochs, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
+                n_epochs, batch_size, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
 
                 if (i_pag==0):
                     axs[0].set(xlabel="{}".format(input_name[0]), ylabel="mean wgt({})".format(input_name[0]))
@@ -1025,9 +988,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, 0]>=bins_tr1[i] and X_train[j, 0]<bins_tr1[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, 0]>=bins_tr1[i] and X_val[j, 0]<bins_tr1[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, 0]>=bins_tr1[i] and X_val[j, 0]<bins_tr1[i+1]]) for i in range(49)]
-                    axs[0].plot(bins_tr1[1:], w_mean_tr, label="{}_train".format(input_name[0]), color='purple', marker='.', alpha=0.7)
-                    axs[0].plot(bins_tr1[1:], w_mean_va, label="{}_val".format(input_name[0]), color='teal', marker='.', alpha=0.7)
-                    axs[0].plot(bins_tr1[1:], w_mean_pr, label="{}_pred".format(input_name[0]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[0].plot(bins_tr1[1:], w_mean_tr, label="{} train".format(input_name[0]), color='purple', marker='.', alpha=0.7)
+                    axs[0].plot(bins_tr1[1:], w_mean_va, label="{} val".format(input_name[0]), color='teal', marker='.', alpha=0.7)
+                    axs[0].plot(bins_tr1[1:], w_mean_pr, label="{} pred".format(input_name[0]), color='goldenrod', marker='.', alpha=0.7)
                     axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
@@ -1036,20 +999,20 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, 1]>=bins_beta[i] and X_train[j, 1]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, 1]>=bins_beta[i] and X_val[j, 1]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, 1]>=bins_beta[i] and X_val[j, 1]<bins_beta[i+1]]) for i in range(49)]
-                    axs[1].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[1]), color='purple', marker='.', alpha=0.7)
-                    axs[1].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[1]), color='teal', marker='.', alpha=0.7)
-                    axs[1].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[1]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_tr, label="{} train".format(input_name[1]), color='purple', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_va, label="{} val".format(input_name[1]), color='teal', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_pr, label="{} pred".format(input_name[1]), color='goldenrod', marker='.', alpha=0.7)
                     axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
-                    axs[2].set(xlabel="m_e-e+ [GeV]", ylabel="dN/d(m_e-e+)")
+                    axs[2].set(xlabel=r"$m_{e^-e^+}$", ylabel=r"$dN/d(m_{e^-e^+})$")
                     w_mean_tr, w_mean_va, w_mean_pr = np.zeros(49), np.zeros(49), np.zeros(49)
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if m_ee_train[j]>=bins_mee[i] and m_ee_train[j]<bins_mee[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if m_ee_val[j]>=bins_mee[i] and m_ee_val[j]<bins_mee[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if m_ee_val[j]>=bins_mee[i] and m_ee_val[j]<bins_mee[i+1]]) for i in range(49)]
-                    axs[2].plot(bins_mee[1:], w_mean_tr, label="{}_train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
-                    axs[2].plot(bins_mee[1:], w_mean_va, label="{}_val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
-                    axs[2].plot(bins_mee[1:], w_mean_pr, label="{}_pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[2].plot(bins_mee[1:], w_mean_tr, label="{} train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
+                    axs[2].plot(bins_mee[1:], w_mean_va, label="{} val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
+                    axs[2].plot(bins_mee[1:], w_mean_pr, label="{} pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
                     axs[2].axvline(x=91.2, color='black', ls='--', lw=0.5)
                     axs[2].set_yscale('log')
                     axs[2].legend(loc='best')
@@ -1060,9 +1023,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, i_pag*3-1]>=bins_tr1[i] and X_train[j, i_pag*3-1]<bins_tr1[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, i_pag*3-1]>=bins_tr1[i] and X_val[j, i_pag*3-1]<bins_tr1[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, i_pag*3-1]>=bins_tr1[i] and X_val[j, i_pag*3-1]<bins_tr1[i+1]]) for i in range(49)]
-                    axs[0].plot(bins_tr1[1:], w_mean_tr, label="{}_train".format(input_name[2]), color='purple', marker='.', alpha=0.7)
-                    axs[0].plot(bins_tr1[1:], w_mean_va, label="{}_val".format(input_name[2]), color='teal', marker='.', alpha=0.7)
-                    axs[0].plot(bins_tr1[1:], w_mean_pr, label="{}_pred".format(input_name[2]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[0].plot(bins_tr1[1:], w_mean_tr, label="{} train".format(input_name[2]), color='purple', marker='.', alpha=0.7)
+                    axs[0].plot(bins_tr1[1:], w_mean_va, label="{} val".format(input_name[2]), color='teal', marker='.', alpha=0.7)
+                    axs[0].plot(bins_tr1[1:], w_mean_pr, label="{} pred".format(input_name[2]), color='goldenrod', marker='.', alpha=0.7)
                     axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
@@ -1071,9 +1034,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, i_pag*3]>=bins_theta[i] and X_train[j, i_pag*3]<bins_theta[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, i_pag*3]>=bins_theta[i] and X_val[j, i_pag*3]<bins_theta[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, i_pag*3]>=bins_theta[i] and X_val[j, i_pag*3-1]<bins_theta[i+1]]) for i in range(49)]
-                    axs[1].plot(bins_theta[1:], w_mean_tr, label="{}_train".format(input_name[3]), color='purple', marker='.', alpha=0.7)
-                    axs[1].plot(bins_theta[1:], w_mean_va, label="{}_val".format(input_name[3]), color='teal', marker='.', alpha=0.7)
-                    axs[1].plot(bins_theta[1:], w_mean_pr, label="{}_pred".format(input_name[3]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[1].plot(bins_theta[1:], w_mean_tr, label="{} train".format(input_name[3]), color='purple', marker='.', alpha=0.7)
+                    axs[1].plot(bins_theta[1:], w_mean_va, label="{} val".format(input_name[3]), color='teal', marker='.', alpha=0.7)
+                    axs[1].plot(bins_theta[1:], w_mean_pr, label="{} pred".format(input_name[3]), color='goldenrod', marker='.', alpha=0.7)
                     axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
@@ -1083,9 +1046,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                         w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, i_pag*3+1]>=bins_phi[i] and X_train[j, i_pag*3+1]<bins_phi[i+1]]) for i in range(49)]
                         w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, i_pag*3+1]>=bins_phi[i] and X_val[j, i_pag*3+1]<bins_phi[i+1]]) for i in range(49)]
                         w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, i_pag*3+1]>=bins_phi[i] and X_val[j, i_pag*3+1]<bins_phi[i+1]]) for i in range(49)]
-                        axs[2].plot(bins_phi[1:], w_mean_tr, label="{}_train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
-                        axs[2].plot(bins_phi[1:], w_mean_va, label="{}_val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
-                        axs[2].plot(bins_phi[1:], w_mean_pr, label="{}_pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
+                        axs[2].plot(bins_phi[1:], w_mean_tr, label="{} train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
+                        axs[2].plot(bins_phi[1:], w_mean_va, label="{} val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
+                        axs[2].plot(bins_phi[1:], w_mean_pr, label="{} pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
                         axs[2].set_yscale('log')
                         axs[2].legend(loc='best')
                     else:
@@ -1099,9 +1062,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
 
                 fig, axs = plt.subplots(3, figsize=(8.27, 11.69)) 
 
-                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: 1000 | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
+                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
     Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
-                n_epochs, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
+                n_epochs, batch_size, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all), loc=9)
 
                 if (i_pag==0):
                     axs[0].set(xlabel="{}".format(input_name[0]), ylabel="mean wgt({})".format(input_name[0]))
@@ -1109,9 +1072,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, 0]>=bins_beta[i] and X_train[j, 0]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, 0]>=bins_beta[i] and X_val[j, 0]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, 0]>=bins_beta[i] and X_val[j, 0]<bins_beta[i+1]]) for i in range(49)]
-                    axs[0].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[0]), color='purple', marker='.', alpha=0.7)
-                    axs[0].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[0]), color='teal', marker='.', alpha=0.7)
-                    axs[0].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[0]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[0].plot(bins_beta[1:], w_mean_tr, label="{} train".format(input_name[0]), color='purple', marker='.', alpha=0.7)
+                    axs[0].plot(bins_beta[1:], w_mean_va, label="{} val".format(input_name[0]), color='teal', marker='.', alpha=0.7)
+                    axs[0].plot(bins_beta[1:], w_mean_pr, label="{} pred".format(input_name[0]), color='goldenrod', marker='.', alpha=0.7)
                     axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
@@ -1120,20 +1083,20 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, 1]>=bins_beta[i] and X_train[j, 1]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, 1]>=bins_beta[i] and X_val[j, 1]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, 1]>=bins_beta[i] and X_val[j, 1]<bins_beta[i+1]]) for i in range(49)]
-                    axs[1].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[1]), color='purple', marker='.', alpha=0.7)
-                    axs[1].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[1]), color='teal', marker='.', alpha=0.7)
-                    axs[1].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[1]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_tr, label="{} train".format(input_name[1]), color='purple', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_va, label="{} val".format(input_name[1]), color='teal', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_pr, label="{} pred".format(input_name[1]), color='goldenrod', marker='.', alpha=0.7)
                     axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
-                    axs[2].set(xlabel="m_e-e+ [GeV]", ylabel="dN/d(m_e-e+)")
+                    axs[2].set(xlabel=r"$m_{e^-e^+}$", ylabel=r"$dN/d(m_{e^-e^+})$")
                     w_mean_tr, w_mean_va, w_mean_pr = np.zeros(49), np.zeros(49), np.zeros(49)
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if m_ee_train[j]>=bins_mee[i] and m_ee_train[j]<bins_mee[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if m_ee_val[j]>=bins_mee[i] and m_ee_val[j]<bins_mee[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if m_ee_val[j]>=bins_mee[i] and m_ee_val[j]<bins_mee[i+1]]) for i in range(49)]
-                    axs[2].plot(bins_mee[1:], w_mean_tr, label="{}_train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
-                    axs[2].plot(bins_mee[1:], w_mean_va, label="{}_val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
-                    axs[2].plot(bins_mee[1:], w_mean_pr, label="{}_pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[2].plot(bins_mee[1:], w_mean_tr, label="{} train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
+                    axs[2].plot(bins_mee[1:], w_mean_va, label="{} val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
+                    axs[2].plot(bins_mee[1:], w_mean_pr, label="{} pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
                     axs[2].axvline(x=91.2, color='black', ls='--', lw=0.5)
                     axs[2].set_yscale('log')
                     axs[2].legend(loc='best')
@@ -1144,9 +1107,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, i_pag*3-1]>=bins_beta[i] and X_train[j, i_pag*3-1]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, i_pag*3-1]>=bins_beta[i] and X_val[j, i_pag*3-1]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, i_pag*3-1]>=bins_beta[i] and X_val[j, i_pag*3-1]<bins_beta[i+1]]) for i in range(49)]
-                    axs[0].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[2]), color='purple', marker='.', alpha=0.7)
-                    axs[0].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[2]), color='teal', marker='.', alpha=0.7)
-                    axs[0].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[2]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[0].plot(bins_beta[1:], w_mean_tr, label="{} train".format(input_name[2]), color='purple', marker='.', alpha=0.7)
+                    axs[0].plot(bins_beta[1:], w_mean_va, label="{} val".format(input_name[2]), color='teal', marker='.', alpha=0.7)
+                    axs[0].plot(bins_beta[1:], w_mean_pr, label="{} pred".format(input_name[2]), color='goldenrod', marker='.', alpha=0.7)
                     axs[0].set_yscale('log')
                     axs[0].legend(loc='best')
 
@@ -1155,9 +1118,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, i_pag*3]>=bins_beta[i] and X_train[j, i_pag*3]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, i_pag*3]>=bins_beta[i] and X_val[j, i_pag*3]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, i_pag*3]>=bins_beta[i] and X_val[j, i_pag*3-1]<bins_beta[i+1]]) for i in range(49)]
-                    axs[1].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[3]), color='purple', marker='.', alpha=0.7)
-                    axs[1].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[3]), color='teal', marker='.', alpha=0.7)
-                    axs[1].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[3]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_tr, label="{} train".format(input_name[3]), color='purple', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_va, label="{} val".format(input_name[3]), color='teal', marker='.', alpha=0.7)
+                    axs[1].plot(bins_beta[1:], w_mean_pr, label="{} pred".format(input_name[3]), color='goldenrod', marker='.', alpha=0.7)
                     axs[1].set_yscale('log')
                     axs[1].legend(loc='best')
 
@@ -1166,9 +1129,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
                     w_mean_tr = [np.mean([wgt_train[j] for j in range(len(wgt_train)) if X_train[j, i_pag*3+1]>=bins_beta[i] and X_train[j, i_pag*3+1]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_va = [np.mean([wgt_val[j] for j in range(len(wgt_val)) if X_val[j, i_pag*3+1]>=bins_beta[i] and X_val[j, i_pag*3+1]<bins_beta[i+1]]) for i in range(49)]
                     w_mean_pr = [np.mean([s1[j] for j in range(len(s1)) if X_val[j, i_pag*3+1]>=bins_beta[i] and X_val[j, i_pag*3+1]<bins_beta[i+1]]) for i in range(49)]
-                    axs[2].plot(bins_beta[1:], w_mean_tr, label="{}_train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
-                    axs[2].plot(bins_beta[1:], w_mean_va, label="{}_val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
-                    axs[2].plot(bins_beta[1:], w_mean_pr, label="{}_pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
+                    axs[2].plot(bins_beta[1:], w_mean_tr, label="{} train".format(input_name[4]), color='purple', marker='.', alpha=0.7)
+                    axs[2].plot(bins_beta[1:], w_mean_va, label="{} val".format(input_name[4]), color='teal', marker='.', alpha=0.7)
+                    axs[2].plot(bins_beta[1:], w_mean_pr, label="{} pred".format(input_name[4]), color='goldenrod', marker='.', alpha=0.7)
                     axs[2].set_yscale('log')
                     axs[2].legend(loc='best')
 
@@ -1178,28 +1141,33 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
         fig, axs = plt.subplots(2, figsize=(8.27, 11.69)) 
 
         # plot ws
-        fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: 1000 | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
-Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {} \nTime read : {:.3f}s | Time init : {:.3f}s 
-Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(len(X_train[0]), layers,
-                n_epochs, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all, time_read, time_init, time_pred, time_unwgt1, time_unwgt2))
-
+        
+        #fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
+            #Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {} \nTime init : {:.3f}s 
+            #Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(len(X_train[0]), layers,
+            #n_epochs, batch_size, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all, time_init, time_pred, time_unwgt1, time_unwgt2))
+        
+        fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_val: {} 
+Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
+                n_epochs, batch_size, learn_rate, len(X_train), len(X_val), input, output, lossfunc, seed_all))
+        
         x1 = np.divide(wgt_val, s1)
         if (output=="wgt"):
             axs_ws[0].set_xscale('log')
 
         # plot predicted output
         axs[0].set(xlabel="output normalized", ylabel="dN/dw")
-        axs[0].hist(x=wgt_train_pred, bins=bins_w_pred, label="w_train", weights=(1/ratio_train_val)*np.ones_like(wgt_train_pred), color='teal', histtype='step', lw=3, alpha=0.5)
-        axs[0].hist(x=wgt_val_pred, bins=bins_w_pred, label="w_val", color='darkblue', histtype='step', lw=3, alpha=0.5)
-        axs[0].hist(x=s1_pred, bins=bins_w_pred, label="s_pred", color='purple', histtype='step', lw=3, alpha=0.5)
+        axs[0].hist(x=wgt_train_pred, bins=bins_w_pred, label="w train", weights=(1/ratio_train_val)*np.ones_like(wgt_train_pred), color='teal', histtype='step', lw=3, alpha=0.5)
+        axs[0].hist(x=wgt_val_pred, bins=bins_w_pred, label="w val", color='darkblue', histtype='step', lw=3, alpha=0.5)
+        axs[0].hist(x=s1_pred, bins=bins_w_pred, label="s pred", color='purple', histtype='step', lw=3, alpha=0.5)
         axs[0].legend(loc='best')
-        if (output=="wno" or output=="lno"):
+        if (output=="wno" or output=="lno" or output=="lnw"):
             axs[0].set_xscale('log')
         axs[0].set_yscale('log')
         
         axs[1].set(xlabel="w", ylabel="w/s")
-        h2 = axs[1].hist2d(wgt_val, x1, bins=[bins_w, bins_ws])
-        axs[1].hlines(y=1, xmin=bins_w[0], xmax=bins_w[-1], color='pink', linewidths=1, linestyles='dotted')
+        h2 = axs[1].hist2d(wgt_val, x1, bins=[bins_w, bins_ws], norm=mpl.colors.LogNorm())
+        axs[1].hlines(y=1, xmin=bins_w[0], xmax=bins_w[-1], color='orange', linewidths=1, linestyles='dotted')
         axs[1].set_xscale('log')
         axs[1].set_yscale('log')
         plt.colorbar(h2[3], ax=axs[1]) 
@@ -1214,7 +1182,7 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         axs_ws[0].set_yscale('log')
 
         axs_ws[1].legend(loc='best')
-        axs_ws[1].set(xlabel="z2*w2/s2", ylabel="dN/d(z2*w2/s2)")
+        axs_ws[1].set(xlabel=r"$\tilde{w}^{(1)} \cdot w/s$", ylabel=r"$dN/d(\tilde{w}^{(1)} \cdot w/s)$")
         axs_ws[1].axvline(x=1, color='black', ls='--')
         axs_ws[1].set_xscale('log')
         axs_ws[1].set_yscale('log')
@@ -1227,28 +1195,14 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         fig, axs = plt.subplots(2, figsize=(8.27, 11.69)) 
 
         if (unwgt=="new"):
-            axs[0].set(xlabel="s_max", ylabel="eff_1")
+            axs[0].set(xlabel=r"$s_{thres}$", ylabel=r"$\varepsilon_1$")
             axs[0].plot(arr_smax, arr_eff1, marker='.', markersize=15)
         if (unwgt=="pap"):
-            axs[0].set(xlabel="w_max", ylabel="eff_1")
+            axs[0].set(xlabel=r"$w_{thres}$", ylabel=r"$\varepsilon_1$")
             axs[0].plot(arr_wmax, arr_eff1, marker='.', markersize=15)
-        axs[0].legend(loc='best')
-        axs[1].set(xlabel="x_max", ylabel="eff_2")
-        """
-        for i_r1 in range(len(arr_r1)):                   # to mark the values for max=real_max with larger points
-            #axs_eff[0].annotate(arr_r1[i_r1], xy=(arr_smax[i_r1], arr_eff1[i_r1]))
-            if (arr_r1[i_r1]==0):
-                if (unwgt=="new"):
-                    axs[0].scatter(arr_smax[i_r1], arr_eff1[i_r1], s=50)
-                if (unwgt=="pap"):
-                    axs[0].scatter(arr_wmax[i_r1], arr_eff1[i_r1], s=50)
-            for i_r2 in range(len(arr_r2)):
-                if (arr_r1[i_r1]==0):
-                    axs[1].scatter(mtx_xmax[i_r1, i_r2], mtx_eff2[i_r1, i_r2], s=50)
-                else:
-                    if (arr_r2[i_r2]==0):
-                        axs[1].scatter(mtx_xmax[i_r1, i_r2], mtx_eff2[i_r1, i_r2], s=50)
-        """
+        axs[0].set_title("efficiency 1")
+        
+        axs[1].set(xlabel=r"$x_{thres}$", ylabel=r"$\varepsilon_2$")
         if (unwgt=="new"):
             for i in range(len(arr_r2)):                      # plot the curve of the efficiencies in function of the x_max with fixed s_max
                 axs[1].plot(mtx_xmax[i, :], mtx_eff2[i], marker='.', markersize=15, color=colors[i], label="ow_s: {}%".format(arr_r1[i]*100))
@@ -1256,20 +1210,19 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
             for i in range(len(arr_r2)):                      # plot the curve of the efficiencies in function of the x_max with fixed s_max
                 axs[1].plot(mtx_xmax[i, :], mtx_eff2[i], marker='.', markersize=15, color=colors[i], label="ow_s: {}%".format(arr_r1[i]*100))
         axs[1].legend(loc='best')
+        axs[1].set_title("efficiency 2")
         pdf.savefig(fig)
         plt.close(fig)
 
 
         fig, axs = plt.subplots(2, figsize=(8.27, 11.69)) 
 
+        # plot feff
         for i in range(len(arr_r1)):                      # x, y labels of the f_eff colormap
-            if (unwgt=="new"):
-                axs[0].text(-0.5, 0.3+i, "ow_s: {}%".format(arr_r1[i]*100), fontsize = 8)
-            if (unwgt=="pap"):
-                axs[0].text(-0.5, 0.3+i, "ow_s: {}%".format(arr_r1[i]*100), fontsize = 8)
-            axs[0].text(0.3+i, -0.5, "ow_x: {}%".format(arr_r2[i]*100), fontsize = 8)
+            axs[0].text(-0.65, 0.45+i, r"$ow_s: $"+"{}%".format(arr_r1[i]*100), fontsize = 8)
+            axs[0].text(0.2+i, -0.3, r"$ow_x: $"+"{}%".format(arr_r2[i]*100), fontsize = 8)
         #axs[0].axis('off')
-        axs[0].set_title(label="f_eff")
+        axs[0].set_title(label="effective gain factor")
         axs[0].set_yticklabels([])
         axs[0].set_xticklabels([])
         h1 = axs[0].pcolormesh(mtx_feff, cmap=cmap)
@@ -1279,29 +1232,42 @@ Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(le
         # plot of plR (plot 1/R) 
         x_plR = np.linspace(1, len(arr_r1)*len(arr_r2), len(arr_r1)*len(arr_r2))
         y1_plR = [ 1 / ( arr_eff1[i//len(arr_r1)] * ( mtx_kish[i//len(arr_r1),i%len(arr_r2)] * mtx_eff2[i//len(arr_r1),i%len(arr_r2)] / (eff1_st*eff2_st) - 1 ) ) for i in range(len(arr_r1)*len(arr_r2))] 
-        y10_plR = [ 1 / ( arr_eff1[i//len(arr_r1)] * ( mtx_kish[i//len(arr_r1),i%len(arr_r2)] * mtx_eff2[i//len(arr_r1),i%len(arr_r2)] / (eff1_st*eff2_st*10) - 1 ) ) for i in range(len(arr_r1)*len(arr_r2))] 
+        y5_plR = [ 1 / ( arr_eff1[i//len(arr_r1)] * ( mtx_kish[i//len(arr_r1),i%len(arr_r2)] * mtx_eff2[i//len(arr_r1),i%len(arr_r2)] / (eff1_st*eff2_st*5) - 1 ) ) for i in range(len(arr_r1)*len(arr_r2))] 
+        #y10_plR = [ 1 / ( arr_eff1[i//len(arr_r1)] * ( mtx_kish[i//len(arr_r1),i%len(arr_r2)] * mtx_eff2[i//len(arr_r1),i%len(arr_r2)] / (eff1_st*eff2_st*10) - 1 ) ) for i in range(len(arr_r1)*len(arr_r2))] 
         # bar color with the kish factor
         kish_dif = np.max(mtx_kish) - np.min(mtx_kish) 
         c_plR = [cmap((mtx_kish[i//len(arr_r1), i%len(arr_r2)]-np.min(mtx_kish))/kish_dif) for i in range(len(arr_r1)*len(arr_r2))]
         norm_plR = mpl.colors.Normalize(vmin=np.min(mtx_kish), vmax=np.max(mtx_kish)) 
         sm_plR = plt.cm.ScalarMappable(cmap=cmap, norm=norm_plR)
         sm_plR.set_array([])
-        axs[1].scatter(x_plR, y1_plR, color=c_plR, s=100, alpha=0.7, marker='o', label="f_eff>1")
-        axs[1].scatter(x_plR, y10_plR, color=c_plR, s=100, alpha=0.7, marker='X', label="f_eff>10")
+        axs[1].scatter(x_plR, y1_plR, color=c_plR, s=100, alpha=0.7, marker='o', label=r"$f_{eff}>1$")
+        axs[1].scatter(x_plR, y5_plR, color=c_plR, s=100, alpha=0.7, marker='X', label=r"$f_{eff}>5$")
+        #axs[1].scatter(x_plR, y10_plR, color=c_plR, s=100, alpha=0.7, marker='X', label="f_eff>10")
         x_plR_min, x_plR_max = axs[1].get_xlim()
         #axs[1].hlines(y=t_ratio, xmin=x_plR_min, xmax=x_plR_max, label="R \n(min value for positive gain)", color='green')
         plt.colorbar(sm_plR, ax=axs[1], ticks=np.linspace(np.min(mtx_kish), np.max(mtx_kish), 5))
-        axs[1].text(-0.5, -0.7 , "ow_s: \now_x:", fontsize = 6)
+        axs[1].text(-0.5, -0.7 , r"$ow_s: $"+"\n"+r"$ow_x: $", fontsize = 6)
         axs[1].set_xticks(x_plR)
         axs[1].set_xticklabels(["{}% \n{}%".format(arr_r1[i//len(arr_r1)]*100,arr_r2[i%len(arr_r2)]*100) for i in range(len(arr_r1)*len(arr_r2))])
         axs[1].tick_params(axis='x', which='major', labelsize=6)
         axs[1].set_ylim([10**(-3), 10**4])
-        axs[1].set_ylabel("Overwgt unwgt 1, 2")
+        #axs[1].set_ylabel("Overwgt unwgt 1, 2")
         axs[1].set_yscale('log')
-        axs[1].set_ylabel("(t_MG/t_nn)_min")
+        axs[1].set_ylabel(r"$\left(\frac{\langle t_{st} \rangle}{\langle t_{nn} \rangle}\right)_{min}$")
         axs[1].legend(loc='best')
         pdf.savefig(fig)
         plt.close(fig)
+
+        
+        # plot table
+        table = axs_tab.table(cellText = data_table, cellLoc ='center', loc ='upper left' )     
+        for k in range(row_max):
+            for r in range(0, len(col_lab)):
+                cell = table[k, r]
+                cell.set_height(0.06)
+        table.set_fontsize(7)
+        pdf.savefig(fig_tab)
+        plt.close(fig_tab)
 
 
         # unweighting of standard sample with fixed kish factor
