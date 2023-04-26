@@ -14,16 +14,26 @@ plt.rc('axes', labelsize=12)    # fontsize of the x and y labels
 
 
 #where = "cluster"            # cluster or local
-#dataset = "8t10to6"            # 7iter, 10to6, 8t10to6
+where = "local"              # cluster or local
+
+#dataset = "8t10to6"          # 7iter, 10to6, 8t10to6, 7m80prt, 8m90prt, 8m95prt
+dataset = "7m80prt"          # 7iter, 10to6, 8t10to6, 7m80prt, 8m90prt, 8m95prt
+#dataset = "7iter"            # 7iter, 10to6, 8t10to6, 7m80prt, 8m90prt, 8m95prt
+
 #load_module = True
-n_epochs = 1000 
-where = "local"            # cluster or local
-dataset = "7iter"            # 7iter, 10to6, 8t10to6
 load_module = False
-#n_epochs = 5 
-channel = "G128"               # G128 , G304 
-#test_sample = "1m"               # 16k, 100k, 1m
-test_sample = "16k"               # 16k, 100k, 1m
+
+#n_epochs = 1000 
+#n_epochs = 100 
+n_epochs = 5 
+
+channel = "G128"             # G128 , G304 
+#channel = "G304"             # G128 , G304 
+
+#test_sample = "1m"           # 16k, 100k, 1m
+test_sample = "16k"          # 16k, 100k, 1m
+
+
 if (test_sample=="16k"):
     test_len = 16000
 if (test_sample=="100k"):
@@ -31,7 +41,6 @@ if (test_sample=="100k"):
 if (test_sample=="1m"):
     test_len = 10**6
     
-
 if (where=="cluster"):
     path_scratch = "/globalscratch/ucl/cp3/lbeccati"
 if (where=="local"):
@@ -48,16 +57,29 @@ time_0 = time.time()
 # reading the momenta and weight of events
 if (dataset=="8t10to6"):
     n_data = 8*10**6
-    val_len = 2*10**6
     train_len = 5*10**6
+    val_len = 2*10**6
 if (dataset=="10to6"):
     n_data = 10**6
-    val_len = 2*10**5
     train_len = 7*10**5
+    val_len = 2*10**5
 if (dataset=="7iter"):
     n_data = 64000
-    val_len = 16000
     train_len = 32000
+    val_len = 16000
+if (dataset=="7m80prt"): 
+    n_data = 2250000
+    train_len = 900000
+    val_len = 325000
+if (dataset=="7m90prt"): 
+    n_data = 1700000
+    train_len = 500000
+    val_len = 200000
+if (dataset=="7m95prt"): 
+    n_data = 1350000
+    train_len = 250000
+    val_len = 100000
+
 ratio_train_test = train_len/test_len
 data = np.empty((n_data, 33)) 
 with open("{}/info_wgt_events_{}_{}.txt".format(path_scratch, channel, dataset), 'r') as infof:
@@ -70,12 +92,29 @@ with open("{}/info_wgt_events_{}_{}.txt".format(path_scratch, channel, dataset),
             print("Events read: {}% in {:.2f}s".format((event/(n_data//100)), time.time()-time_0))
         event +=1
 
+# partially unwgt training samples use the original events for test (not the same event)
+if (dataset=="7m80prt" or dataset=="7m90prt" or dataset=="7m95prt"):
+    with open("{}/info_wgt_events_{}_8t10to6.txt".format(path_scratch, channel), 'r') as infof:
+        event_test = 0
+        for line in infof.readlines():
+            if (event_test>=7*10**6):            # up to 7m used for unwgt training sample
+                data[event, :] = [float(i) for i in line.split()]
+                if (event%(n_data//100)==0):
+                    print("Events read: {}% in {:.2f}s".format((event/(n_data//100)), time.time()-time_0))
+                event+=1
+            event_test+=1
+
+
 
 ##################################################
 # settings
 ##################################################
 
-tests = [2121711] 
+tests = [2151811]
+#tests = [2111511, 2111211, 2111611, 2111411, 2111711, 2111811] 
+#tests = [2121513, 2121213, 2121613, 2121413, 2121713, 2121813] 
+#tests = [2151511, 2151211, 2151611, 2151411, 2151711, 2151811] 
+
 
 for test in tests:
     # test = ABCDEFGH
@@ -144,9 +183,10 @@ for test in tests:
         output_activation = "lin"                # linear
     if (test%10==2):
         output_activation = "lre"                # leaky relu
-    if (test%10==3):
+    if (test%10==3 or minpred=="btq" or minpred=="btf" or minpred=="btm"):
         output_activation = "rel"                # relu
 
+    r_low = 0.999            # r_s to define s_low as minimum prediction
 
     if (output=="wno" or output=="lno"):
         delta_hub = 0.2
@@ -408,7 +448,7 @@ for test in tests:
     # evaluation of s_low
     s_low = 0
     if (minpred=="btq" or minpred=="atq"):
-        s_low = my_max(wgt_train, r_ow=0.999)              # s_low = 1/1000 of the contribution of the cross section
+        s_low = my_max(wgt_train, r_ow=r_low)              # s_low = 1/1000 of the contribution of the cross section
     if (minpred=="btf" or minpred=="atf"):
         s_low = np.sort(wgt_train)[len(wgt_train)//100]    # s_low larger than 99% of events
     if (minpred=="btm" or minpred=="atm"): 
@@ -450,11 +490,15 @@ for test in tests:
         wgt_test_pred = wgt_test
 
     if (output=="rww"):                    # predict log( 1 + w/w_low)
+        if (minpred=="nmp"):
+            s_low = my_max(wgt_train, r_ow=r_low)              # s_low = 1/1000 of the contribution of the cross section
         wgt_train_pred = np.log(1 + wgt_train/s_low) 
         wgt_val_pred =  np.log(1 + wgt_val/s_low)
         wgt_test_pred =  np.log(1 + wgt_test/s_low)
 
     if (output=="rst"):                    # predict log( 1 + w/w_low) standardized
+        if (minpred=="nmp"):
+            s_low = my_max(wgt_train, r_ow=r_low)              # s_low = 1/1000 of the contribution of the cross section
         wgt_train_pred = np.log(1 + wgt_train/s_low) 
         wgt_train_pred = np.reshape(wgt_train_pred, (len(wgt_train_pred), 1))
         stan_sc.fit(wgt_train_pred)
@@ -636,13 +680,13 @@ for test in tests:
     if (output=="lno"):
         bins_w_pred = np.logspace(-5, 0, 50)
     if (output=="wst" or output=="lst" or output=="rst"):
-        bins_w_pred = np.linspace(-10, 10, 50)
+        bins_w_pred = np.linspace(-15, 15, 50)
     if (output=="wgt"):
         bins_w_pred = bins_w
     if (output=="lnw"):
-        bins_w_pred = np.linspace(5, 70, 50)
+        bins_w_pred = np.linspace(np.log(10**(-15)), np.log(10**(-3)), 50)
     if (output=="rww"):
-        bins_w_pred = np.logspace(10**(-5), 25, 50)
+        bins_w_pred = np.logspace(np.log(10**(-5)), np.log(25), 50)
 
     plot_legend = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_test: {}
 Input norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
@@ -707,7 +751,7 @@ Input norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Max func: {} \nUnwg
         s1 = np.reshape(s1_pred, (len(s1_pred), 1))
         s1 = stan_sc.inverse_transform(s1) 
         s1 = s1.reshape(len(s1))
-        s1 = (np.exp(s1_pred) - 1) * s_low 
+        s1 = (np.exp(s1) - 1) * s_low 
     s1 = np.double(s1) 
 
     if (minpred=="atq" or minpred=="atf" or minpred=="atm"):
@@ -1251,10 +1295,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
             #Time pred : {:.3f}s | Time unwgt1 : {:.3f}s | Time unwgt2 : {:.3f}s""".format(len(X_train[0]), layers,
             #n_epochs, batch_size, learn_rate, len(X_train), len(X_test), input, output, lossfunc, seed_all, time_init, time_pred, time_unwgt1, time_unwgt2))
         
-        fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_test: {} 
-Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {} \nTime pred: {}""".format(len(X_train[0]), layers,
-                n_epochs, batch_size, learn_rate, len(X_train), len(X_test), input, output, lossfunc, seed_all, time_pred))
-        
+        #fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_test: {} \nNormalization: {} | Output: {} \nLoss: {} | Seed tf and np: {} \nTime pred: {}""".format(len(X_train[0]), layers, n_epochs, batch_size, learn_rate, len(X_train), len(X_test), input, output, lossfunc, seed_all, time_pred))
+        fig.legend(title=plot_legend)
+
         x1 = np.divide(wgt_test, s1)
         if (output=="wgt"):
             axs_ws[0].set_xscale('log')
@@ -1265,9 +1308,9 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {} \nTime pred: {}""
         axs[0].hist(x=wgt_test_pred, bins=bins_w_pred, label="w test", color='darkblue', histtype='step', lw=3, alpha=0.5)
         axs[0].hist(x=s1_pred, bins=bins_w_pred, label="s pred", color='purple', histtype='step', lw=3, alpha=0.5)
         if (minpred!="nmp"):
-            axs[0].axvline(x=s_low_pred, label="s_low_pred: {:.2e}".format(s_low_pred), color='green', linewidth=2, linestyle='dotted')
-        axs[0].legend(loc='best')
-        if (output=="wno" or output=="lno" or output=="lnw" or output=="rww"):
+            axs[0].axvline(x=s_low_pred, label="s_low_pred: {:.2e}".format(s_low_pred), color='darkred', linewidth=2, linestyle='dotted')
+        axs[0].legend(loc=3)
+        if (output=="wno" or output=="lno" or output=="wgt" or output=="rww"):
             axs[0].set_xscale('log')
         axs[0].set_yscale('log')
         
@@ -1275,7 +1318,8 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {} \nTime pred: {}""
         h2 = axs[1].hist2d(wgt_test, x1, bins=[bins_w, bins_ws], norm=mpl.colors.LogNorm())
         axs[1].axhline(y=1, color='orange', linewidth=1, linestyle='dotted')
         if (minpred!="nmp"):
-            axs[1].axvline(x=s_low, label="s_low: {:.2e}".format(s_low), color='mediumorchid', linewidth=2, linestyle='dotted')
+            axs[1].axvline(x=s_low, label="s_low: {:.2e}".format(s_low), color='darkred', linewidth=2, linestyle='dotted')
+            axs[1].legend(loc='best')
         axs[1].set_xscale('log')
         axs[1].set_yscale('log')
         plt.colorbar(h2[3], ax=axs[1], label="Frequency") 
