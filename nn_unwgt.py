@@ -13,25 +13,34 @@ stan_sc = StandardScaler()
 plt.rc('axes', labelsize=12)    # fontsize of the x and y labels
 
 
-#where = "cluster"            # cluster or local
-where = "local"              # cluster or local
+where = "cluster"            # cluster or local
+#where = "local"              # cluster or local
 
-#dataset = "8t10to6"          # 7iter, 10to6, 8t10to6, 7m80prt, 8m90prt, 8m95prt
-dataset = "7m80prt"          # 7iter, 10to6, 8t10to6, 7m80prt, 8m90prt, 8m95prt
+dataset = "8t10to6"          # 7iter, 10to6, 8t10to6, 7m80prt, 8m90prt, 8m95prt
+#dataset = "7m80prt"          # 7iter, 10to6, 8t10to6, 7m80prt, 8m90prt, 8m95prt
 #dataset = "7iter"            # 7iter, 10to6, 8t10to6, 7m80prt, 8m90prt, 8m95prt
 
 #load_module = True
 load_module = False
 
-#n_epochs = 1000 
+#n_epochs = 5 
 #n_epochs = 100 
-n_epochs = 5 
+n_epochs = 1000 
+
+n_epochs_age = 10
+#n_epochs_age = 20
+#n_epochs_age = 50
 
 channel = "G128"             # G128 , G304 
 #channel = "G304"             # G128 , G304 
 
-#test_sample = "1m"           # 16k, 100k, 1m
-test_sample = "16k"          # 16k, 100k, 1m
+test_sample = "1m"           # 16k, 100k, 1m
+#test_sample = "16k"          # 16k, 100k, 1m
+
+lossfunc = "mse" 
+#lossfunc = "hub" 
+#lossfunc = "lch" 
+#lossfunc = "chi" 
 
 
 if (test_sample=="16k"):
@@ -110,105 +119,94 @@ if (dataset=="7m80prt" or dataset=="7m90prt" or dataset=="7m95prt"):
 # settings
 ##################################################
 
-tests = [2151811]
-#tests = [2111511, 2111211, 2111611, 2111411, 2111711, 2111811] 
-#tests = [2121513, 2121213, 2121613, 2121413, 2121713, 2121813] 
-#tests = [2151511, 2151211, 2151611, 2151411, 2151711, 2151811] 
-
+tests = [21271]
+#tests = [23271]
 
 for test in tests:
-    # test = ABCDEFGH
+    # test = ABCDEF
     # A (layers)
-    if (test//10**6==1):
+    if (test//10**4==1):
         layers = "4x64" 
-    if (test//10**6==2):
+    if (test//10**4==2):
         layers = "4x128" 
-    if (test//10**6==3):
+    if (test//10**4==3):
         layers = "8x64" 
-    # B (loss function)
-    if ((test%10**6)//10**5==1):
-        lossfunc = "mse" 
-    if ((test%10**6)//10**5==2):
-        lossfunc = "hub" 
-    if ((test%10**6)//10**5==3):
-        lossfunc = "lch" 
-    if ((test%10**6)//10**5==4):
-        lossfunc = "chi" 
-    #C (minimum on the prediction)
-    if ((test%10**5)//10**4==1):
-        minpred = "nmp"                # nmp: no minimum prediction
-    if ((test%10**5)//10**4==2):
-        minpred = "btq"                # btq: (s_low) before training quantile (reduction method)
-    if ((test%10**5)//10**4==3):
-        minpred = "btf"                # btf: (s_low) before training (smaller than a given) fraction 
-    if ((test%10**5)//10**4==4):
-        minpred = "btm"                # btm: (s_low) before training (respect w) max
-    if ((test%10**5)//10**4==5):
-        minpred = "atq"                # atq: (s_low) after training quantile (reduction method)
-    if ((test%10**5)//10**4==6):
-        minpred = "atf"                # atf: (s_low) after training (smaller than a given) fraction 
-    if ((test%10**5)//10**4==7):
-        minpred = "atm"                # atm: (s_low) after training (respect w) max
-    #D (inputs of the nn and their normalization)
+    # B (training model)
     if ((test%10**4)//10**3==1):
-        input = "ptitf" 
+        training_model = "fit"
     if ((test%10**4)//10**3==2):
-        input = "ptptf" 
+        training_model = "cdt"
     if ((test%10**4)//10**3==3):
-        input = "p3pap" 
-    # E (output of the nn and its normalization)
+        training_model = "cpt"
+    if ((test%10**4)//10**3==4):
+        training_model = "cdm"
+    if ((test%10**4)//10**3==5):
+        training_model = "cpm"
+    # C (minimum on the prediction)
     if ((test%10**3)//10**2==1):
-        output = "wno"                 # w normalized
+        minpred = "nmp"                # nmp: no minimum prediction
     if ((test%10**3)//10**2==2):
-        output = "wst"                 # w standardized
+        minpred = "btq"                # btq: (s_low) before training quantile (reduction method)
     if ((test%10**3)//10**2==3):
-        output = "lno"                 # ln(w) normalized
+        minpred = "btf"                # btf: (s_low) before training (smaller than a given) fraction 
     if ((test%10**3)//10**2==4):
-        output = "lst"                 # ln(w) standardized
+        minpred = "btm"                # btm: (s_low) before training (respect w) max
     if ((test%10**3)//10**2==5):
-        output = "wgt"                 # w 
+        minpred = "atq"                # atq: (s_low) after training quantile (reduction method)
     if ((test%10**3)//10**2==6):
-        output = "lnw"                 # ln(w)
+        minpred = "atf"                # atf: (s_low) after training (smaller than a given) fraction 
     if ((test%10**3)//10**2==7):
-        output = "rww"                 # ln(1 + w/s_low)
-    if ((test%10**3)//10**2==8):
-        output = "rst"                 # ln(1 + w/s_low) standardized
-    # G (unweighting method)
+        minpred = "atm"                # atm: (s_low) after training (respect w) max
+    # D (output of the nn and its normalization)
     if ((test%10**2)//10**1==1):
-        unwgt = "new"                  # new unweighting method
+        output = "wno"                 # w normalized
     if ((test%10**2)//10**1==2):
+        output = "wst"                 # w standardized
+    if ((test%10**2)//10**1==3):
+        output = "lno"                 # ln(w) normalized
+    if ((test%10**2)//10**1==4):
+        output = "lst"                 # ln(w) standardized
+    if ((test%10**2)//10**1==5):
+        output = "wgt"                 # w 
+    if ((test%10**2)//10**1==6):
+        output = "lnw"                 # ln(w)
+    if ((test%10**2)//10**1==7):
+        output = "rww"                 # ln(1 + w/s_low)
+    if ((test%10**2)//10**1==8):
+        output = "rst"                 # ln(1 + w/s_low) standardized
+    # E (unweighting method)
+    if ((test%10**1)//10**0==1):
+        unwgt = "new"                  # new unweighting method
+    if ((test%10**1)//10**0==2):
         unwgt = "pap"                  # unweighting method of the SHERPA paper
-    # F (output activation function)
-    if (test%10==1):
-        output_activation = "lin"                # linear
-    if (test%10==2):
-        output_activation = "lre"                # leaky relu
-    if (test%10==3 or minpred=="btq" or minpred=="btf" or minpred=="btm"):
-        output_activation = "rel"                # relu
 
-    r_low = 0.999            # r_s to define s_low as minimum prediction
 
-    if (output=="wno" or output=="lno"):
-        delta_hub = 0.2
-    if (output=="wst" or output=="lst"):
-        delta_hub = 3
+    r_low = 0.999                  # r_s to define s_low as minimum prediction
 
-    seed_all = 2 
-    maxfunc = "mqr"                    # mqr or mmr
-
+    if (lossfunc=="hub"):
+        if (output=="wno" or output=="lno"):
+            delta_hub = 0.2
+        if (output=="wst" or output=="lst"):
+            delta_hub = 3
     
     if (unwgt=="new"):
+        input = "ptitf"            # ptitf, ptptf 
         batch_size = 500
         learn_rate = 0.0001
+        if (minpred=="btq" or minpred=="btf" or minpred=="btm"):
+            output_activation = "rel"                # relu
+        else:
+            output_activation = "lin"                # linear, or "lre" leaky relu
     if (unwgt=="pap"):
+        input = "p3pap" 
         batch_size = 1000
         learn_rate = 0.001
+        output_activation = "rel"                # relu
 
     if (channel=="G128"):
         eff1_st = 0.6832                                  # standard effeciencies for the first unwgt
         eff2_st = 0.0205                                  # standard effeciencies for the second unwgt
         t_st = 0.00248                                    # average time to unwgt one event for MG
-        #t_ratio = 0.02                                   # t_surrogate / t_standard = 1/50, t: time to compute one event
     if (channel=="G304"):
         eff1_st = 0.6537                                  # standard effeciencies for the first unwgt
         eff2_st = 0.0455                                  # standard effeciencies for the second unwgt
@@ -216,9 +214,13 @@ for test in tests:
     E_cm_pro = 13000                                 # energy of cm of protons
     t_nn = 0.00003
 
+    seed_all = 2 
+    maxfunc = "mqr"                    # mqr or mmr
+    
     part_name = ["e-", "e+", "g1", "g2", "d", "d~"]
 
     
+
     # efficiencies functions
     def f_kish(z):                                   # kish factor
         if (len(z)==0):
@@ -632,27 +634,149 @@ for test in tests:
     if (load_module==True):
         model = tf.keras.models.load_model("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, lossfunc, maxfunc, minpred, input, output, output_activation, unwgt, seed_all, dataset))
 
-    else:
+    if (load_module==False):
         opt = tf.keras.optimizers.Adam(learning_rate=learn_rate)
         model.compile(optimizer=opt, loss=loss) 
 
         # training
-        callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=30)
-        history = model.fit(X_train, wgt_train_pred, validation_data=(X_val, wgt_val_pred), batch_size=batch_size, epochs=n_epochs, callbacks=[callback]) 
+        if (training_model=="fit"):
+            callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=30)
+            history = model.fit(X_train, wgt_train_pred, validation_data=(X_val, wgt_val_pred), batch_size=batch_size, epochs=n_epochs, callbacks=[callback]) 
 
+        if (training_model!="fit"):
+            n_age = n_epochs//n_epochs_age
+            mask_train = np.full(train_len, True)
+            mask_val = np.full(val_len, True)
+            histories_ages_train = np.zeros(n_epochs)
+            histories_ages_val = np.zeros(n_epochs)
+            histories_val = np.zeros(n_age)
+            patience_age = 3
+            wait_age = 0
+            age_best = 1
+            list_age = np.linspace(0, n_age, n_age+1)
+
+            for age in range(n_age):
+                X_train_age = np.delete(X_train, np.where(mask_train==False), axis=0)
+                wgt_train_pred_age = np.delete(wgt_train_pred, np.where(mask_train==False))
+                wgt_train_age = np.delete(wgt_train, np.where(mask_train==False))
+                X_val_age = np.delete(X_val, np.where(mask_val==False), axis=0)
+                wgt_val_pred_age = np.delete(wgt_val_pred, np.where(mask_val==False))
+                wgt_val_age = np.delete(wgt_train, np.where(mask_val==False))
+                if (len(wgt_train_pred_age)<batch_size or len(wgt_val_pred_age)<batch_size):
+                    print("\nEarly stopping: training events lower than batch size\n")
+                    model.set_weights(best_weights)
+                    histories_ages_train = histories_ages_train[0:(age+1)*n_epochs_age]
+                    histories_ages_val = histories_ages_val[0:(age+1)*n_epochs_age]
+                    histories_val = histories_val[0: age+1]
+                    break
+                history_age = model.fit(X_train_age, wgt_train_pred_age, validation_data=(X_val_age, wgt_val_pred_age), batch_size=batch_size, epochs=n_epochs_age)
+                histories_ages_train[age*n_epochs_age:(age+1)*n_epochs_age] = history_age.history['loss']
+                histories_ages_val[age*n_epochs_age:(age+1)*n_epochs_age] = history_age.history['val_loss']
+                histories_val[age] = model.evaluate(X_val, wgt_val_pred, batch_size=batch_size) 
+                
+                s_train_pred = model.predict(tf.convert_to_tensor(X_train))
+                s_train_pred = np.reshape(s_train_pred, len(s_train_pred))
+                s_val_pred = model.predict(tf.convert_to_tensor(X_val))
+                s_val_pred = np.reshape(s_val_pred, len(s_val_pred))
+                if (minpred=="atq" or minpred=="atf" or minpred=="atm"):
+                    s_train_pred = np.maximum(s_train_pred, s_low_pred)
+                    s_val_pred = np.maximum(s_val_pred, s_low_pred)
+                if (output=="lst"):
+                    s_train = np.reshape(s_train_pred, (len(s_train_pred), 1))
+                    s_train = stan_sc.inverse_transform(s_train) 
+                    s_train = s_train.reshape(len(s_train))
+                    s_train = np.exp(s_train) 
+                    s_val = np.reshape(s_val_pred, (len(s_val_pred), 1))
+                    s_val = stan_sc.inverse_transform(s_val) 
+                    s_val = s_val.reshape(len(s_val))
+                    s_val = np.exp(s_val) 
+                if (output=="wst"):
+                    s_train = np.reshape(s_train_pred, (len(s_train_pred), 1))
+                    s_train = stan_sc.inverse_transform(s_train) 
+                    s_train = s_train.reshape(len(s_train))
+                    s_val = np.reshape(s_val_pred, (len(s_val_pred), 1))
+                    s_val = stan_sc.inverse_transform(s_val) 
+                    s_val = s_val.reshape(len(s_val))
+                if (output=="wgt"):
+                    s_train = s_train_pred 
+                    s_val = s_val_pred 
+                if (output=="lnw"):
+                    s_train = np.exp(s_train_pred) 
+                    s_val = np.exp(s_val_pred) 
+                if (output=="rww"):
+                    s_train = (np.exp(s_train_pred) - 1) * s_low 
+                    s_val = (np.exp(s_val_pred) - 1) * s_low 
+                if (output=="rst"):
+                    s_train = np.reshape(s_train_pred, (len(s_train_pred), 1))
+                    s_train = stan_sc.inverse_transform(s_train) 
+                    s_train = s_train.reshape(len(s_train))
+                    s_train = (np.exp(s_train) - 1) * s_low 
+                    s_val = np.reshape(s_val_pred, (len(s_val_pred), 1))
+                    s_val = stan_sc.inverse_transform(s_val) 
+                    s_val = s_val.reshape(len(s_val))
+                    s_val = (np.exp(s_val) - 1) * s_low 
+                s_train = np.double(s_train) 
+                x_age_train = np.divide(wgt_train, s_train)
+                s_val = np.double(s_val) 
+                x_age_val = np.divide(wgt_val, s_val)
+
+                # early stopping
+                if (age>0):
+                    if (histories_ages_val[(age+1)*n_epochs_age-1]<histories_ages_val[(age)*n_epochs_age-1]):
+                        wait_age = 0
+                        if (histories_ages_val[(age+1)*n_epochs_age-1]<histories_ages_val[(age_best+1)*n_epochs_age-1]):
+                            age_best = age
+                            best_weights = model.get_weights()
+                    else:
+                        wait_age += 1
+                        if (wait_age>=patience_age):
+                            model.set_weights(best_weights)
+                            histories_ages_train = histories_ages_train[0:(age+1)*n_epochs_age]
+                            histories_ages_val = histories_ages_val[0:(age+1)*n_epochs_age]
+                            histories_val = histories_val[0: age+1]
+                            break
+
+                # update mask
+                if (training_model=="cdt" or training_model=="cpt"):
+                    mask_max = 5
+                if (training_model=="cdm" or training_model=="cpm"):
+                    mask_max = np.mean(x_age_train)
+                if (training_model=="cdt" or training_model=="cdm"):
+                    mask_train = np.where(x_age_train>mask_max, True, False)
+                    mask_val = np.where(x_age_val>mask_max, True, False)
+                if (training_model=="cpt" or training_model=="cpm"):
+                    mask_rand_train = np.random.rand(len(wgt_train_pred))
+                    mask_train = np.where(x_age_train>mask_max*mask_rand_train, True, False)
+                    mask_rand_val = np.random.rand(len(wgt_val_pred))
+                    mask_val = np.where(x_age_val>mask_max*mask_rand_val, True, False)
+        
         # save model
-        model.save("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, lossfunc, maxfunc, minpred, input, output, output_activation, unwgt, seed_all, dataset))
+        model.save("{}/model_nn_unwgt_{}_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}".format(path_scratch, channel, layers, training_model, lossfunc, minpred, input, output, output_activation, unwgt, seed_all, dataset))
 
 
     if (load_module==False):
         fig_tr, axs_tr = plt.subplots(figsize=(8.27, 6))
-        axs_tr.plot(history.history['loss'], label="Training")
-        axs_tr.plot(history.history['val_loss'], label="Validation")
-        axs_tr.set_yscale('log')
-        axs_tr.set(xlabel="epochs", ylabel="loss")
-        axs_tr.legend(loc=0)
-        fig_tr.savefig("{}/train_{}_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, channel, layers, lossfunc, maxfunc, minpred, input, output, output_activation, unwgt, seed_all, dataset))
-        plt.close(fig_tr)
+        if (training_model=="fit"):
+            axs_tr.plot(history.history['loss'], label="Training")
+            axs_tr.plot(history.history['val_loss'], label="Validation")
+            axs_tr.set_yscale('log')
+            axs_tr.set(xlabel="epochs", ylabel="loss")
+            axs_tr.legend(loc=0)
+            fig_tr.savefig("{}/train_{}_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, channel, layers, training_model, lossfunc, minpred, input, output, output_activation, unwgt, seed_all, dataset))
+            plt.close(fig_tr)
+        if (training_model!="fit"):
+            bins_age = np.linspace(0, len(histories_val)*n_epochs_age, len(histories_val)+1)
+            axs_tr.plot(histories_ages_train, label="Training masked", color='navy')
+            axs_tr.plot(histories_ages_val, label="Validation masked", color='cornflowerblue')
+            axs_tr.plot(bins_age[1:], histories_val, label="Validation", color='orange')
+            for i in range(len(bins_age)):
+                axs_tr.axvline(x=bins_age[i], color='black', linewidth=1, linestyle='dotted',  alpha=0.2)
+            axs_tr.set_yscale('log')
+            axs_tr.set(xlabel="epochs", ylabel="loss")
+            axs_tr.legend(title="Ages: {} \nEpochs per age: {}".format(len(histories_val), n_epochs_age), loc=0)
+            axs_tr.legend(loc=0)
+            fig_tr.savefig("{}/train_{}_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}.pdf".format(path_scratch, channel, layers, training_model, lossfunc, minpred, input, output, output_activation, unwgt, seed_all, dataset))
+            plt.close(fig_tr)
 
 
 
@@ -688,9 +812,9 @@ for test in tests:
     if (output=="rww"):
         bins_w_pred = np.logspace(np.log(10**(-5)), np.log(25), 50)
 
-    plot_legend = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_test: {}
-Input norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Max func: {} \nUnwgt method: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
-        n_epochs, batch_size , learn_rate, len(X_train), len(X_test), input, output, minpred, lossfunc, maxfunc, unwgt, seed_all)
+        plot_legend = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nTrain model: {} | Ev_train: {} | Ev_test: {}\nInput norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Out act func: {} | Max func: {} \nUnwgt method: {} | Seed tf and np: {}""".format(
+            len(X_train[0]), layers, n_epochs, batch_size , learn_rate, training_model, len(X_train), len(X_test), input, output, minpred, lossfunc, output_activation, maxfunc, unwgt, seed_all)
+
     
     fig_ws, axs_ws = plt.subplots(2, figsize=(8.27, 11.69))
     fig_ws.legend(title = plot_legend)
@@ -723,6 +847,9 @@ Input norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Max func: {} \nUnwg
 
     s1_pred = model.predict(tf.convert_to_tensor(X_test))
     s1_pred = np.reshape(s1_pred, len(s1_pred))
+    if (minpred=="atq" or minpred=="atf" or minpred=="atm"):
+        s1_pred = np.maximum(s1_pred, s_low_pred)
+    
     if (output=="lno"):
         s1 = np.reshape(s1_pred, (len(s1_pred), 1))
         s1 = norm_sc.inverse_transform(s1) 
@@ -753,10 +880,6 @@ Input norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Max func: {} \nUnwg
         s1 = s1.reshape(len(s1))
         s1 = (np.exp(s1) - 1) * s_low 
     s1 = np.double(s1) 
-
-    if (minpred=="atq" or minpred=="atf" or minpred=="atm"):
-        s1 = np.maximum(s1, s_low)
-
 
     t_pred_f = time.time()
     time_pred = t_pred_f - t_pred_i
@@ -924,38 +1047,43 @@ Input norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Max func: {} \nUnwg
 
             # plot zk overweight
             if (len(z3)>=1):
+                bins_zk = np.linspace(0.501, 10.501, 20)
+                bins_zk[-1] = 10**6
                 if (i_r1==0):
-                    axs_zk1[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.501, 10.501, 20), 
+                    axs_zk1[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=bins_zk, 
                         color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
                         label=[r"$N_0^{ow}: $"+"{}".format(len(z3_0ow)), r"$N_1^{ow}: $"+"{}".format(len(z3_1ow)), r"$N_2^{ow}: $"+"{}".format(len(z3_2ow)), r"$N_{12}^{ow}: $"+"{}".format(len(z3_12ow))])
+                    axs_zk1[i_r2].set_xlim([0.501, 10.501])
                     axs_zk1[i_r2].set_ylim([1, 10**5])
                     axs_zk1[i_r2].set_yscale('log')
                     axs_zk1[i_r2].legend(title=r"$r_s: $"+"{}%\n".format(arr_r1[i_r1]*100)+r"$r_x: $"+"{}%\n".format(arr_r2[i_r2]*100)+r"$\alpha: $"+"{:.3f}".format(mtx_kish[i_r1, i_r2]), loc='best')
                     axs_zk1[i_r2].set(xlabel=r"$\tilde{w}$", ylabel=r"$\frac{dN}{d(\tilde{w})}$")
                     axs_zk1[i_r2].set_xticks(np.linspace(1, 10, 10))
-
                 if (i_r1==1):
-                    axs_zk2[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.501, 10.501, 20), 
+                    axs_zk2[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=bins_zk, 
                         color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k",  
                         label=[r"$N_0^{ow}: $"+"{}".format(len(z3_0ow)), r"$N_1^{ow}: $"+"{}".format(len(z3_1ow)), r"$N_2^{ow}: $"+"{}".format(len(z3_2ow)), r"$N_{12}^{ow}: $"+"{}".format(len(z3_12ow))])
+                    axs_zk2[i_r2].set_xlim([0.501, 10.501])
                     axs_zk2[i_r2].set_ylim([1, 10**5])
                     axs_zk2[i_r2].set_yscale('log')
                     axs_zk2[i_r2].legend(title=r"$r_s: $"+"{}%\n".format(arr_r1[i_r1]*100)+r"$r_x: $"+"{}%\n".format(arr_r2[i_r2]*100)+r"$\alpha: $"+"{:.3f}".format(mtx_kish[i_r1, i_r2]), loc='best')
                     axs_zk2[i_r2].set(xlabel=r"$\tilde{w}$", ylabel=r"$\frac{dN}{d(\tilde{w})}$")
                     axs_zk2[i_r2].set_xticks(np.linspace(1, 10, 10))
                 if (i_r1==2):
-                    axs_zk3[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.501, 10.501, 20), 
+                    axs_zk3[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=bins_zk, 
                         color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
                         label=[r"$N_0^{ow}: $"+"{}".format(len(z3_0ow)), r"$N_1^{ow}: $"+"{}".format(len(z3_1ow)), r"$N_2^{ow}: $"+"{}".format(len(z3_2ow)), r"$N_{12}^{ow}: $"+"{}".format(len(z3_12ow))])
+                    axs_zk3[i_r2].set_xlim([0.501, 10.501])
                     axs_zk3[i_r2].set_ylim([1, 10**5])
                     axs_zk3[i_r2].set_yscale('log')
                     axs_zk3[i_r2].legend(title=r"$r_s: $"+"{}%\n".format(arr_r1[i_r1]*100)+r"$r_x: $"+"{}%\n".format(arr_r2[i_r2]*100)+r"$\alpha: $"+"{:.3f}".format(mtx_kish[i_r1, i_r2]), loc='best')
                     axs_zk3[i_r2].set(xlabel=r"$\tilde{w}$", ylabel=r"$\frac{dN}{d(\tilde{w})}$")
                     axs_zk3[i_r2].set_xticks(np.linspace(1, 10, 10))
                 if (i_r1==3):
-                    axs_zk4[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=np.linspace(0.501, 10.501, 20), 
+                    axs_zk4[i_r2].hist([z3_0ow, z3_1ow, z3_2ow, z3_12ow], bins=bins_zk, 
                         color=['blue', 'yellow', 'orange', 'red'], stacked=True, ec="k", 
                         label=[r"$N_0^{ow}: $"+"{}".format(len(z3_0ow)), r"$N_1^{ow}: $"+"{}".format(len(z3_1ow)), r"$N_2^{ow}: $"+"{}".format(len(z3_2ow)), r"$N_{12}^{ow}: $"+"{}".format(len(z3_12ow))])
+                    axs_zk4[i_r2].set_xlim([0.501, 10.501])
                     axs_zk4[i_r2].set_ylim([1, 10**5])
                     axs_zk4[i_r2].set_yscale('log')
                     axs_zk4[i_r2].legend(title=r"$r_s: $"+"{}%\n".format(arr_r1[i_r1]*100)+r"$r_x: $"+"{}%\n".format(arr_r2[i_r2]*100)+r"$\alpha: $"+"{:.3f}".format(mtx_kish[i_r1, i_r2]), loc='best')
@@ -1001,7 +1129,7 @@ Input norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Max func: {} \nUnwg
         m_ee_test = m_ee_test * E_cm_pro / 2
 
     #with PdfPages("/home/lb_linux/nn_unwgt/plot_.pdf") as pdf: 
-    with PdfPages("{}/plot_{}_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}_{}.pdf".format(path_scratch, channel, layers, input, output, lossfunc, maxfunc, output_activation, unwgt, test_sample, seed_all, dataset, where)) as pdf: 
+    with PdfPages("{}/plot_{}_{}_{}_{}_{}_{}_{}_{}_{}_seed{}_{}_{}.pdf".format(path_scratch, channel, layers, training_model, input, output, lossfunc, output_activation, unwgt, test_sample, seed_all, dataset, where)) as pdf: 
         # plot train and input distribution
         
         if (input=="ptitf" or input=="ptptf"):
@@ -1009,9 +1137,8 @@ Input norm: {} | Output norm: {} | Min pred: {} \nLoss: {} | Max func: {} \nUnwg
 
                 fig, axs = plt.subplots(3, figsize=(8.27, 11.69)) 
 
-                fig.legend(title = """Layers: {}, {}, 1 \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_test: {} 
-Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_train[0]), layers,
-                n_epochs, batch_size, learn_rate, len(X_train), len(X_test), input, output, lossfunc, seed_all), loc=9)
+                fig.legend(title = """Layers: {}, {}, 1 , Training: {} \nEpochs: {} | Batch size: {} | Learn. rate: {} \nEv_train: {} | Ev_test: {}\nNormalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(
+                    len(X_train[0]), layers, training_model, n_epochs, batch_size, learn_rate, len(X_train), len(X_test), input, output, lossfunc, seed_all), loc=9)
             
                 if (i_pag==0):
                     axs[0].set(xlabel="{}".format(input_name[0]), ylabel=r"$d(\sigma)$"+"/d({}) [pb]".format(input_name[0]))
@@ -1323,14 +1450,13 @@ Normalization: {} | Output: {} \nLoss: {} | Seed tf and np: {}""".format(len(X_t
         axs[1].set_xscale('log')
         axs[1].set_yscale('log')
         plt.colorbar(h2[3], ax=axs[1], label="Frequency") 
-        axs[1].legend(loc='best')
-
+        
         pdf.savefig(fig)
         plt.close(fig)
 
         axs_ws[0].set(xlabel="w/s", ylabel="dN/d(w/s)")
         axs_ws[0].hist(x1, bins=bins_ws)
-        axs_ws[0].axvline(x=1, color='black', ls='--')
+        axs_ws[0].axvline(x=1, color='orange', linewidth=1, linestyle='dotted')
         axs_ws[0].set_xscale('log')
         axs_ws[0].set_xticks([10**(-6), 10**(-4), 10**(-2), 10**(0), 10**(2), 10**(4), 10**(6)])
         axs_ws[0].set_yscale('log')
